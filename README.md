@@ -23,6 +23,19 @@ Repository layout
 - `ui/` local UI assets
 - `Docs/FREELANCE_AUTOMATION_PATH.md` implementation notes
 
+Templates
+---------
+
+The `templates/` folder contains outreach email/apply text samples.
+
+Before real usage, update these templates with your own:
+
+- candidate name and contact details
+- portfolio/CV links
+- message tone and role-specific value proposition
+
+Do not send stock templates as-is.
+
 Quick start (Windows)
 ---------------------
 
