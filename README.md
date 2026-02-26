@@ -23,6 +23,20 @@ Repository layout
 - `ui/` local UI assets
 - `Docs/FREELANCE_AUTOMATION_PATH.md` implementation notes
 
+Why Telegram scripts are here
+-----------------------------
+
+Telegram scripts in `scripts/telegram_*.py` are used as an additional lead source.
+
+They handle:
+
+- importing job-related channels/chats into a source list
+- cleaning/pruning low-signal or spammy sources
+- scanning messages and extracting paid gig/job leads into SQLite
+- optional folder management for source channels
+
+They do not perform platform apply clicks and do not send Telegram outreach in this public snapshot.
+
 Templates
 ---------
 
