@@ -321,7 +321,6 @@ async def run(args: argparse.Namespace) -> int:
                             is_broadcast = bool(getattr(ent, "broadcast", False))
                             is_megagroup = bool(getattr(ent, "megagroup", False))
                             is_creator = bool(getattr(ent, "creator", False))
-                            # Broadcast channels are often read-only for non-admins.
                             if is_broadcast and (not is_megagroup) and (not is_creator):
                                 skipped += 1
                                 add_event(

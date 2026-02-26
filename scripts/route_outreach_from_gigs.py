@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import json
 import re
@@ -254,7 +254,6 @@ def _target_from_row(
             },
         )
 
-    # Default safety policy: LinkedIn only via Apply/Easy Apply URL, no DM/connect.
     if not allow_linkedin_outreach:
         return (
             None,

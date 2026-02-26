@@ -233,9 +233,7 @@ output:
 
 notify:
   enabled: false
-  # Back-compat: if you set only sound_path it will be used for "done" and as a fallback.
   sound_path: ""
-  # Optional per-situation sounds (recommended).
   sounds:
     done: ""
     attention: ""

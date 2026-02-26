@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import random
 import re
@@ -37,11 +37,8 @@ def candidate_from_cfg(cfg: Dict[str, object], *, profile: Optional[Dict[str, st
     name = str(profile.get("candidate.name") or cfg_get(cfg, "candidate.name", "")).strip()
     first, last = _split_name(name)
     phone = str(profile.get("candidate.phone") or cfg_get(cfg, "candidate.phone", "")).strip()
-    # The UI splits country code and number; we keep it simple and default to Vietnam +84.
     phone_country = "Vietnam (+84)"
-    # Strip common separators.
     phone_number = re.sub(r"[^0-9]", "", phone)
-    # For +84 phones, LinkedIn expects the local digits without +84. If config includes +84, trim it.
     if phone_number.startswith("84") and len(phone_number) >= 10:
         phone_number = phone_number[2:]
     email = str(profile.get("candidate.email") or cfg_get(cfg, "candidate.email", "")).strip()
@@ -74,13 +71,11 @@ async def _select_phone_country_if_present(scope, value: str) -> bool:
         sel = scope.get_by_label("Phone country code", exact=False).first
         if not await sel.is_visible(timeout=1500):
             return False
-        # It can be <select> or a combobox. Try select_option first.
         try:
             await sel.select_option(label=value)
             return True
         except Exception:
             pass
-        # Fallback: click and pick from listbox options.
         try:
             await sel.click()
             opt = scope.get_by_role("option", name=re.compile(re.escape(value), re.IGNORECASE)).first
@@ -98,8 +93,6 @@ async def _attach_resume_if_possible(scope, resume_path: Path) -> bool:
     if not resume_path.exists():
         return False
 
-    # If a resume option is already visible in the UI, prefer the existing one
-    # instead of re-uploading on each step.
     try:
         scope_text = (await _scope_text(scope)).lower()
         stem = resume_path.stem.lower()
@@ -108,15 +101,12 @@ async def _attach_resume_if_possible(scope, resume_path: Path) -> bool:
     except Exception:
         pass
 
-    # LinkedIn often uses hidden <input type="file"> for resume/cover letter.
     try:
         inputs = scope.locator("input[type='file']")
         n = await inputs.count()
         if n <= 0:
             return False
 
-        # Prefer the input whose associated label/container mentions "resume".
-        # Never upload PDF to photo/image-only controls.
         best_idx = 0
         best_score = -10_000
         for i in range(n):
@@ -165,7 +155,6 @@ async def _attach_resume_if_possible(scope, resume_path: Path) -> bool:
             except Exception:
                 continue
 
-        # If no resume-like control was found, do nothing.
         if best_score <= 0:
             return False
 
@@ -245,7 +234,6 @@ def _is_sensitive_question(q_norm: str) -> bool:
     q = normalize_question(q_norm)
     if not q:
         return False
-    # Per user policy: do not auto-answer these unless the user provided an explicit answer in the DB.
     if "authorized to work" in q and "us" in q:
         return True
     if "work in the us" in q and "authorized" in q:
@@ -264,11 +252,9 @@ def _template_answer(q_norm: str, *, profile: Optional[Dict[str, str]] = None) -
     if not q:
         return ""
 
-    # Never guess WordPress-specific experience (often asked in agency roles).
     if "wordpress" in q:
         return ""
 
-    # Remote/distributed team experience.
     if ("worked remotely" in q) or ("distributed team" in q) or ("remote" in q and "team" in q):
         return (
             "Yes. I have 5+ years of experience working in remote/distributed teams. "
@@ -276,7 +262,6 @@ def _template_answer(q_norm: str, *, profile: Optional[Dict[str, str]] = None) -
             "coordinating via Jira and CI pipelines and verifying releases end-to-end."
         )
 
-    # QA interests/tools.
     if ("tools" in q or "technologies" in q) and ("qa" in q or "quality assurance" in q) and ("interesting" in q or "exciting" in q):
         return (
             "API testing (REST/GraphQL) and auth/security testing, C#/.NET automation (NUnit/RestSharp), "
@@ -284,7 +269,6 @@ def _template_answer(q_norm: str, *, profile: Optional[Dict[str, str]] = None) -
             "with Playwright/Selenium for critical flows. I also enjoy release verification and evidence-based defect reporting."
         )
 
-    # Web technologies (keep honest: QA for web/apps/APIs, not a web developer claim).
     if ("web development" in q and "technologies" in q) or ("web technologies" in q):
         return (
             "I mainly test web platforms and APIs. Technologies/tools I work with include REST and GraphQL APIs, "
@@ -292,13 +276,11 @@ def _template_answer(q_norm: str, *, profile: Optional[Dict[str, str]] = None) -
             "I have fundamentals in HTML/CSS and focus on QA for web apps rather than building full web features."
         )
 
-    # Common direct profile fields.
     if "linkedin profile url" in q or ("linkedin" in q and "url" in q):
         return str(profile.get("candidate.linkedin") or "").strip()
     if q == "linkedin":
         return str(profile.get("candidate.linkedin") or "").strip()
 
-    # Years-of-experience questions: safe CV-based mapping for recurring QA tools.
     if "how many years" in q:
         years_map = [
             ("manual testing", "5"),
@@ -593,7 +575,6 @@ async def _fill_additional_questions(
         if not (required and not val):
             continue
 
-        # Per policy: do not auto-answer sensitive questions unless explicitly present in DB.
         ans = ""
         if db_conn is not None and qn:
             got = get_answer(db_conn, qn)
@@ -616,13 +597,11 @@ async def _fill_additional_questions(
                 missing.append({"question": q_raw, "q_norm": qn, "tag": tag, "type": typ, "options": meta.get("options") or []})
             continue
 
-        # Fill based on control type.
         try:
             if tag == "select":
                 try:
                     await el.select_option(label=ans)
                 except Exception:
-                    # Fallback: best-effort match by option text.
                     opts = [str(o or "").strip() for o in (meta.get("options") or [])]
                     pick = ""
                     for o in opts:
@@ -795,7 +774,6 @@ async def _find_primary_button(scope):
                 score += (100 - idx * 10)
                 break
 
-        # Footer-ish buttons are typically lower and to the right.
         x = float(meta.get("x") or 0.0)
         y = float(meta.get("y") or 0.0)
         w = float(meta.get("w") or 0.0)
@@ -818,7 +796,6 @@ async def _find_primary_button(scope):
     if best_idx >= 0:
         return buttons.nth(best_idx)
 
-    # Fallback: pick the last visible role button by primary names within scope.
     for pat in [r"Submit application", r"Submit", r"Review", r"Next", r"Continue", r"Done"]:
         try:
             btns = scope.get_by_role("button", name=re.compile(pat, re.IGNORECASE))
@@ -855,10 +832,8 @@ async def _scope_text(scope) -> str:
     - Page: evaluate(document.body.innerText)
     """
     try:
-        # Locator.inner_text(timeout=...) exists; Page.inner_text requires a selector.
         return await scope.inner_text(timeout=1500)
     except TypeError:
-        # Likely a Page scope.
         try:
             return await scope.evaluate("() => (document.body?.innerText || '')")
         except Exception:
@@ -871,7 +846,6 @@ async def _scope_text(scope) -> str:
 
 
 async def _detect_submitted(scope) -> bool:
-    # LinkedIn varies copy; keep it broad.
     low = (await _scope_text(scope) or "").lower()
     return (
         "application submitted" in low
@@ -889,7 +863,6 @@ async def _page_detect_submitted(page) -> bool:
         return False
     low = (text or "").lower()
 
-    # LinkedIn often shows "Applied 26m ago" on the job page instead of a modal confirmation.
     if re.search(
         r"\\bapplied\\s+\\d+\\s*(?:m|h|d|w|mo|minute|minutes|hour|hours|day|days|week|weeks|month|months)\\s+ago\\b",
         low,
@@ -936,7 +909,6 @@ async def _wait_for_apply_ui(page, timeout_ms: int = 15_000) -> bool:
 
 
 async def _get_apply_scope(page):
-    # Prefer a dialog scope when present; otherwise operate on the whole page.
     try:
         dlg = page.get_by_role("dialog").first
         if await dlg.is_visible(timeout=800):
@@ -971,16 +943,13 @@ async def _walk_easy_apply_steps(
             await dump_debug(root, page, "apply_checkpoint")
             return ("failed", "checkpoint")
 
-        # Page-level success detection (sometimes the modal closes instantly after submit).
         if await _page_detect_submitted(page):
             return ("submitted", "page_detected_submitted")
 
-        # If the dialog closes (common after submit), check if we actually submitted.
         try:
             if scope is not page and await page.get_by_role("dialog").count() == 0:
                 if await _page_detect_submitted(page):
                     return ("submitted", "dialog_closed_page_detected_submitted")
-                # Give the UI a moment; it may be transitioning between steps.
                 await page.wait_for_timeout(2500)
                 if await page.get_by_role("dialog").count() == 0:
                     if await _page_detect_submitted(page):
@@ -991,14 +960,12 @@ async def _walk_easy_apply_steps(
         except Exception:
             pass
 
-        # Fill common contact info fields if present.
         await _fill_if_present(scope, "First name", candidate.first_name)
         await _fill_if_present(scope, "Last name", candidate.last_name)
         await _select_phone_country_if_present(scope, candidate.phone_country)
         await _fill_if_present(scope, "Mobile phone number", candidate.phone_number)
         await _fill_if_present(scope, "Email address", candidate.email)
 
-        # Policy: skip applications that require photo/image upload.
         try:
             if await _has_required_photo_upload(scope):
                 await dump_debug(root, page, f"apply_photo_required_s{step+1}")
@@ -1006,7 +973,6 @@ async def _walk_easy_apply_steps(
         except Exception:
             pass
 
-        # Try resume handling only until we confirm this flow already has a resume option.
         if not resume_checked_once:
             try:
                 attached = await _attach_resume_if_possible(scope, resume_path)
@@ -1020,7 +986,6 @@ async def _walk_easy_apply_steps(
             except Exception:
                 pass
 
-        # Additional Questions: fill what we can; stop if unknown required questions exist.
         try:
             _ok, missing = await _fill_additional_questions(scope, db_conn=db_conn, profile=profile)
         except Exception:
@@ -1041,23 +1006,19 @@ async def _walk_easy_apply_steps(
 
         btn = await _find_primary_button(scope)
         if btn is None:
-            # Sometimes the footer/button renders after a short delay (loading spinners).
             await page.wait_for_timeout(900)
             btn = await _find_primary_button(scope)
         if btn is None and scope is page:
-            # Full-page apply flow fallback.
             btn = await _find_primary_button(page)
         if btn is None:
             await dump_debug(root, page, f"apply_no_primary_button_s{step+1}")
             return ("needs_manual", "no_next_or_submit_button")
 
-        # If we're about to submit, stop unless explicitly allowed.
         try:
             name = await btn.inner_text(timeout=1000)
         except Exception:
             name = ""
 
-        # If we keep seeing the same step signature, stop early and ask for manual help.
         try:
             st = await _scope_text(scope)
         except Exception:
@@ -1080,7 +1041,6 @@ async def _walk_easy_apply_steps(
 
         try:
             if not await btn.is_enabled():
-                # Try to detect any required fields we missed (for actionable debug).
                 try:
                     req = await _extract_required_questions(scope)
                 except Exception:
@@ -1098,7 +1058,6 @@ async def _walk_easy_apply_steps(
         except Exception:
             pass
 
-        # Human-ish delay.
         await page.wait_for_timeout(random.randint(600, 1200))
         try:
             await btn.scroll_into_view_if_needed()
@@ -1113,7 +1072,6 @@ async def _walk_easy_apply_steps(
                 break
             except Exception as e:
                 click_err = type(e).__name__
-                # Modal may re-render between fill and click; re-find once.
                 await page.wait_for_timeout(450)
                 btn = await _find_primary_button(scope)
                 if btn is None and scope is page:
@@ -1123,7 +1081,6 @@ async def _walk_easy_apply_steps(
 
         if not clicked:
             try:
-                # Final fallback: dispatch click on the selected button.
                 if btn is not None:
                     await btn.evaluate("(el) => el.click()")
                     clicked = True
@@ -1135,11 +1092,9 @@ async def _walk_easy_apply_steps(
             return ("needs_manual", f"primary_click_failed:{click_err or 'unknown'}")
         await page.wait_for_timeout(random.randint(900, 1500))
 
-        # If submit happened and the dialog closed, detect success.
         if scope is not page and await page.get_by_role("dialog").count() == 0 and await _page_detect_submitted(page):
             return ("submitted", "page_detected_submitted_after_click")
 
-        # Refresh scope for the next step (some flows re-render the dialog).
         scope = await _get_apply_scope(page)
 
     await dump_debug(root, page, "apply_max_steps")
@@ -1166,11 +1121,9 @@ async def run_easy_apply_once(
     if not ok:
         return ("failed", "job_open_failed_or_checkpoint")
 
-    # If we've already applied, LinkedIn usually shows "Applied <time> ago" on the job page.
     if await _page_detect_submitted(page):
         return ("submitted", "already_applied_detected_on_job_page")
 
-    # Click Easy Apply.
     await page.wait_for_timeout(1500)
     easy_a = page.locator("a[href*='openSDUIApplyFlow=true'], a[href*='/apply/?openSDUIApplyFlow=true']").first
     easy_btn = page.get_by_role("button", name=re.compile(r"easy apply", re.IGNORECASE)).first
@@ -1184,11 +1137,8 @@ async def run_easy_apply_once(
                 await locator.click()
             apply_page = await pop.value
         except Exception:
-            # No popup opened; keep using the same page.
             await locator.click()
 
-    # Some job pages render an Easy Apply *link* that's hidden/un-clickable but still has
-    # a valid apply URL. Prefer clicking when possible, otherwise navigate directly.
     easy_href = ""
     deadline = asyncio.get_running_loop().time() + 10.0
     while not clicked and asyncio.get_running_loop().time() < deadline:
@@ -1224,7 +1174,6 @@ async def run_easy_apply_once(
                 clicked = True
                 break
             except Exception:
-                # If navigation fails, keep waiting for the clickable UI.
                 pass
 
         await page.wait_for_timeout(450)
@@ -1235,7 +1184,6 @@ async def run_easy_apply_once(
             return ("needs_manual", f"no_easy_apply_external:{ext_url}")
         return ("needs_manual", "no_easy_apply")
 
-    # If Easy Apply opened a popup, apply_page already points to it.
     if apply_page is not page:
         try:
             apply_page.set_default_timeout(30_000)
@@ -1244,12 +1192,10 @@ async def run_easy_apply_once(
         except Exception:
             pass
 
-    # Wait for the Easy Apply UI to appear (modal OR full apply page).
     if not await _wait_for_apply_ui(apply_page, timeout_ms=18_000):
         await dump_debug(root, apply_page, "apply_ui_not_found")
         return ("needs_manual", "apply_ui_not_found")
 
-    # From here on, operate on the apply page (same tab or popup).
     page = apply_page
 
     return await _walk_easy_apply_steps(

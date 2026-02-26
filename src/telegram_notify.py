@@ -14,12 +14,10 @@ class TelegramBotConfig:
 
 
 def _candidate_config_paths() -> list[Path]:
-    # User override first.
     env_path = (os.getenv("TT_BOT_CONFIG") or "").strip()
     if env_path:
         return [Path(env_path)]
 
-    # Default local config paths (repo-relative).
     return [
         Path("config/tt-bot.local.json"),
         Path("config/tt-bot.json"),

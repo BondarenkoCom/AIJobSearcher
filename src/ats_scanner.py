@@ -130,7 +130,6 @@ def scan_company_for_ats(
         except Exception:
             return None
 
-    # 1) Try homepage
     home_html = fetch(website)
     if home_html:
         for ats_type, slug in _find_ats_in_text(home_html):
@@ -141,7 +140,6 @@ def scan_company_for_ats(
     else:
         candidate_links = []
 
-    # 2) Try candidate career links
     if scan_links:
         for link in candidate_links:
             html = fetch(link)
@@ -153,7 +151,6 @@ def scan_company_for_ats(
                 return ats_sources
             time.sleep(sleep_sec)
 
-    # 3) Try common paths
     if scan_common_paths:
         common_paths = ["/careers", "/career", "/jobs", "/join-us", "/work-with-us"]
         for path in common_paths:

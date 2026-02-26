@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import subprocess
 from pathlib import Path
 from typing import Dict
@@ -100,7 +100,6 @@ def _play_mp3_mci(path: Path, *, wait: bool = True) -> bool:
         winmm = ctypes.windll.winmm
         alias = "aijobsearcher_notify"
 
-        # Best-effort cleanup from previous runs.
         winmm.mciSendStringW(f"close {alias}", None, 0, None)
 
         code = winmm.mciSendStringW(
@@ -123,18 +122,10 @@ def _play_mp3_mci(path: Path, *, wait: bool = True) -> bool:
 
 
 def _notify_path(root: Path, cfg: Dict[str, object], *, kind: str) -> str:
-    # New format:
-    #   notify:
-    #     sounds:
-    #       done: ...
-    #       attention: ...
-    #       error: ...
-    #       timeout: ...
     sp = str(cfg_get(cfg, f"notify.sounds.{kind}", "")).strip()
     if sp:
         return sp
 
-    # Back-compat: single sound_path (treated as "done" + default fallback).
     legacy = str(cfg_get(cfg, "notify.sound_path", "")).strip()
     if kind == "done":
         return legacy
@@ -156,7 +147,6 @@ def notify(root: Path, cfg: Dict[str, object], *, kind: str = "done") -> None:
     wait = bool(cfg_get(cfg, "notify.wait", True))
     sound_path = _notify_path(root, cfg, kind=kind)
     if not sound_path and kind == "timeout":
-        # Convenience: if timeout not configured, reuse error.
         sound_path = _notify_path(root, cfg, kind="error")
 
     if sound_path:
@@ -166,18 +156,15 @@ def notify(root: Path, cfg: Dict[str, object], *, kind: str = "done") -> None:
             if _play_wav(path, wait=wait):
                 return
         elif suffix == ".mp3":
-            # Try lightweight MCI first; if it's not supported, convert via ffmpeg and play as wav.
             if _play_mp3_mci(path, wait=wait):
                 return
             wav = _convert_mp3_to_wav(path, out_dir=(root / "data" / "out" / "notify_sounds"))
             if wav and _play_wav(wav, wait=wait):
                 return
         else:
-            # Unknown extension; try to play as wav (some WAVs have non-standard extensions).
             if _play_wav(path, wait=wait):
                 return
 
-    # Fallback to a simple system beep.
     _try_winsound_beep()
 
 

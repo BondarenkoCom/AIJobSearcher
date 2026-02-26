@@ -193,7 +193,6 @@ def _connect_note(candidate_name: str, recipient_name: str, job_title: str = "")
     rec = _first_name(recipient_name)
     role = (job_title or "a QA role").strip()
     pitch = _role_pitch(role)
-    # Keep this deliberately compact to avoid truncation and "spammy" phrasing.
     text = (
         f"Hi {rec} - I saw your post about {role}. "
         f"I'm {cand}, QA Engineer (manual + automation): API/auth testing + C#/.NET automation. "
@@ -250,7 +249,6 @@ def _load_targets(csv_path: Path, *, conn, limit: int) -> List[Target]:
             if not lead_id and post_url:
                 lead_id = by_post_url.get(post_url, "")
             if not lead_id:
-                # Keep deterministic pseudo lead id fallback for event consistency.
                 lead_id = f"post_{abs(hash(profile_url))}"
 
             out.append(
@@ -275,21 +273,18 @@ async def _click_first_visible(candidates: List, *, timeout_ms: int = 1800) -> b
         except Exception:
             pass
 
-        # 1) Normal click (actionability checks)
         try:
             await loc.click(timeout=timeout_ms)
             return True
         except Exception:
             pass
 
-        # 2) Forced click (bypass pointer interception)
         try:
             await loc.click(timeout=timeout_ms, force=True)
             return True
         except Exception:
             pass
 
-        # 3) DOM click fallbacks (works even when Playwright deems it "not clickable")
         try:
             await loc.dispatch_event("click")
             return True
@@ -514,7 +509,6 @@ async def _compose_recipient_matches(page, scope, expected_profile_url: str) -> 
             continue
 
     if not href:
-        # Cannot validate; play it safe and refuse to send.
         return False
 
     try:
@@ -530,7 +524,6 @@ async def _compose_recipient_matches(page, scope, expected_profile_url: str) -> 
 
 async def _click_text_action(page, labels: List[str], *, timeout_ms: int = 2000) -> bool:
     """Click action by visible text, then climb to nearest clickable parent."""
-    # 1) Fast role-based pass first.
     for label in labels:
         try:
             btn = page.get_by_role("button", name=re.compile(rf"^{re.escape(label)}$", re.IGNORECASE)).first
@@ -549,7 +542,6 @@ async def _click_text_action(page, labels: List[str], *, timeout_ms: int = 2000)
         except Exception:
             pass
 
-    # 2) Text-to-parent fallback (works with deeply nested LinkedIn spans).
     deadline = datetime.now().timestamp() + max(0.5, timeout_ms / 1000.0)
     norm_labels = [x.strip().lower() for x in labels if x.strip()]
     while datetime.now().timestamp() < deadline:
@@ -597,7 +589,6 @@ async def _click_text_action(page, labels: List[str], *, timeout_ms: int = 2000)
 async def _send_dm(page, text: str, subject: str, *, expected_profile_url: str) -> Tuple[bool, str]:
     top = await _profile_action_scope(page)
 
-    # Prefer "compose" href navigation when available (more reliable than clicking).
     try:
         a = top.locator("a[href*='/messaging/compose']:visible").first
         if await a.is_visible(timeout=350):
@@ -625,7 +616,6 @@ async def _send_dm(page, text: str, subject: str, *, expected_profile_url: str) 
         timeout_ms=1300,
     )
     if not opened:
-        # Some profiles hide "Message" under the "More" menu.
         if await _open_more_menu(top):
             await page.wait_for_timeout(350)
             opened = await _click_first_visible(
@@ -654,7 +644,6 @@ async def _send_dm(page, text: str, subject: str, *, expected_profile_url: str) 
             break
         await page.wait_for_timeout(300)
     if not opened_ok:
-        # Retry opening once more for flaky profile cards / delayed drawers.
         reopened = await _click_first_visible(
             [
                 top.locator("button[aria-label^='Message ']:visible").first,
@@ -675,7 +664,6 @@ async def _send_dm(page, text: str, subject: str, *, expected_profile_url: str) 
 
     scope = await _active_compose_scope(page)
 
-    # Do not spend InMail credits automatically.
     if await _is_paid_inmail_required(scope):
         return (False, "inmail_requires_credits")
 
@@ -786,7 +774,6 @@ async def _send_connect(page, note: str) -> Tuple[bool, str]:
 
     await page.wait_for_timeout(700)
     dialog = await _find_connect_dialog(page)
-    # If Add a note exists, use it.
     added_note = await _click_first_visible(
         [
             dialog.get_by_role("button", name=re.compile(r"Add a note", re.IGNORECASE)).first,
@@ -809,7 +796,6 @@ async def _send_connect(page, note: str) -> Tuple[bool, str]:
             except Exception:
                 continue
 
-    # Some flows require email verification; do not loop.
     try:
         email_like = dialog.locator(
             "input[type='email'], input[name*='email' i], input[id*='email' i], input[placeholder*='email' i], input[aria-label*='email' i]"
@@ -980,7 +966,6 @@ async def run(args: argparse.Namespace) -> int:
             expected_url = _canonical_url(t.profile_url)
             actual_url = _canonical_url(page.url)
 
-            # Guard: if LinkedIn redirects us elsewhere, do NOT click Message/Follow/Connect.
             if expected_url and actual_url and actual_url != expected_url:
                 await dump_debug(ROOT, page, "outreach_unexpected_redirect")
                 failed += 1
@@ -1031,7 +1016,6 @@ async def run(args: argparse.Namespace) -> int:
             dm_reason = ""
             connect_reason = ""
             follow_reason = ""
-            # Prefer connect-first for most post-based outreach (many profiles require paid InMail for DM).
             action_order = ["connect", "dm"] if t.action == "connect" else ["dm", "connect"]
             for act in action_order:
                 if act == "dm":
@@ -1055,7 +1039,6 @@ async def run(args: argparse.Namespace) -> int:
                     connect_reason = why
                     details = why
 
-            # Always try Follow as well to increase network reach.
             follow_ok, follow_why = await _send_follow(page)
             follow_reason = follow_why
             if follow_ok:

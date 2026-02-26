@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import json
 import re
@@ -73,7 +73,6 @@ def _canonical_url(url: str) -> str:
     u = _text(url)
     if not u:
         return ""
-    # Keep simple and stable for dedupe.
     u = u.split("#", 1)[0].strip()
     return u
 
@@ -88,7 +87,6 @@ def _qa_score(title: str, description: str) -> int:
         score += 2
     if TOOL_RE.search(f"{title_t}\n{desc_t}"):
         score += 2
-    # Avoid false positives where no explicit QA/test-engineering signal exists.
     if (score > 0) and (not QA_RE.search(title_t)) and (not TOOL_RE.search(f"{title_t}\n{desc_t}")):
         score = 0
     return min(10, score)

@@ -103,7 +103,6 @@ def main() -> int:
             continue
         jobs.extend(collect_from_http_json(src))
 
-    # Company leads
     company_sources = cfg_get(cfg, "company_sources", []) or []
     company_leads = []
     for src in company_sources:
@@ -150,7 +149,6 @@ def main() -> int:
         except PermissionError:
             print(f"[company] companies.csv is locked: {companies_path} (close it and rerun)")
 
-    # ATS scan and jobs
     ats_cfg = cfg_get(cfg, "ats", {}) or {}
     ats_sources: List[ATSSource] = []
     if ats_cfg.get("enabled", False):

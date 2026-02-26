@@ -1,4 +1,4 @@
-import os
+﻿import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,7 +17,6 @@ class TelethonAuth:
 
 
 def load_telethon_auth(root: Path) -> TelethonAuth:
-    # Keep accounts first so local secrets in .env.accounts win.
     load_env_file(root / ".env.accounts")
     load_env_file(root / ".env")
 

@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import json
 import os
@@ -15,7 +15,6 @@ from playwright.async_api import async_playwright
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# Avoid crashing the batch on console encoding issues (Windows terminals vary).
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
@@ -158,8 +157,6 @@ def _fetch_jobs_to_apply(
             )
             if VIETNAM_RE.search(txt):
                 continue
-        # easy_only means: we will click Easy Apply. If apply_type is empty (unknown),
-        # we still try (some pages hide the button until fully rendered).
         if easy_only and apply_type and apply_type not in {"easy_apply", "unknown"}:
             continue
         if job_id:
@@ -189,7 +186,6 @@ async def run(args: argparse.Namespace) -> int:
     candidate = None
     target_urls = _load_target_urls(args.targets_file)
 
-    # Resume path: explicit arg -> first email attachment -> nothing.
     resume_path = resolve_path(ROOT, args.resume) if args.resume.strip() else None
     if resume_path is None or not resume_path.exists():
         attach = cfg_get(cfg, "email.attachments", [])
@@ -322,7 +318,6 @@ async def run(args: argparse.Namespace) -> int:
                     print("[li-apply-batch] stop_on_fail enabled; stopping.")
                     break
 
-            # Human-ish pacing between applications.
             await page.wait_for_timeout(random.randint(args.min_delay_ms, args.max_delay_ms))
             if args.long_break_every > 0 and idx % args.long_break_every == 0 and idx < len(jobs):
                 await page.wait_for_timeout(random.randint(args.long_break_min_ms, args.long_break_max_ms))
@@ -387,7 +382,6 @@ def main() -> int:
     ap.add_argument("--step-timeout-ms", type=int, default=30_000, help="Per-step Playwright timeout")
     ap.add_argument("--timeout-seconds", type=int, default=3600, help="Overall timeout")
 
-    # Human-ish pacing between jobs.
     ap.add_argument("--min-delay-ms", type=int, default=4500, help="Min delay between applications")
     ap.add_argument("--max-delay-ms", type=int, default=9500, help="Max delay between applications")
     ap.add_argument("--long-break-every", type=int, default=7, help="Long break every N applications")

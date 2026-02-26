@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import json
 import re
@@ -68,8 +68,6 @@ def _is_valid_email(value: str) -> bool:
     local, domain = e.split("@", 1)
     if not local or "." not in domain:
         return False
-    # Scraped pages sometimes include URL-encoded garbage like "%20info@domain.com".
-    # Percent is technically allowed in local-part, but it's extremely rare in real hiring contacts.
     if "%" in local:
         return False
     if any(domain.endswith(sfx) for sfx in BAD_EMAIL_DOM_SUFFIXES):

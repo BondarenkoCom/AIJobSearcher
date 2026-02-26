@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import re
 from datetime import datetime
@@ -215,7 +215,6 @@ def main() -> int:
                         }
                     )
 
-    # Unique rows by handle + reddit_url.
     uniq_rows: List[Dict[str, str]] = []
     seen_key: Set[str] = set()
     for r in rows:
@@ -237,7 +236,6 @@ def main() -> int:
         src = Path(args.sources_file)
         if not src.is_absolute():
             src = ROOT / src
-        # Unique handles only.
         handles = sorted({r["handle"] for r in uniq_rows if r.get("handle")})
         added = append_unique_lines(src, handles)
 

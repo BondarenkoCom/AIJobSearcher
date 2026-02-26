@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import re
 import sys
@@ -28,12 +28,12 @@ JOB_TERMS = (
     "test",
     "sdet",
     "automation",
-    "вакан",
-    "работа",
-    "фриланс",
-    "удален",
-    "удалён",
-    "тестиров",
+    "РІР°РєР°РЅ",
+    "СЂР°Р±РѕС‚Р°",
+    "С„СЂРёР»Р°РЅСЃ",
+    "СѓРґР°Р»РµРЅ",
+    "СѓРґР°Р»С‘РЅ",
+    "С‚РµСЃС‚РёСЂРѕРІ",
 )
 NOISE_TERMS = (
     "crypto",
@@ -116,10 +116,8 @@ async def run(args: argparse.Namespace) -> int:
             if not title:
                 continue
 
-            # First pass: title/username signal.
             score = _score_text(title + " " + uname)
 
-            # Optional second pass: last message text signal.
             if score < int(args.min_score):
                 try:
                     txt = _clean_title(str(getattr(dlg, "message", None).message or ""))

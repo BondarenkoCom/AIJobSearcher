@@ -28,7 +28,6 @@ from src.telegram_notify import send_telegram_message  # noqa: E402
 
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
 
-# "Fit" keywords for candidate fit: QA + automation + backend/API.
 QA_RE = re.compile(
     r"\b(qa|quality\s+assurance|tester|testing|test\s+automation|automation\s+test|sdet|performance\s+test|manual\s+test|api\s+test)\b",
     re.IGNORECASE,
@@ -41,7 +40,6 @@ REMOTE_NEG_RE = re.compile(r"\b(on[-\s]?site|onsite)\b", re.IGNORECASE)
 HYBRID_RE = re.compile(r"\bhybrid\b", re.IGNORECASE)
 REMOTE_POS_RE = re.compile(r"\bremote\b", re.IGNORECASE)
 
-# Keyword hints used for cheap sitemap prefilter (URL slug).
 SLUG_HINT_RE = re.compile(r"(qa|test|testing|sdet|quality|automation|selenium|playwright|cypress|appium)", re.IGNORECASE)
 
 
@@ -81,7 +79,6 @@ def _resume_skill_tokens(text: str) -> List[str]:
     We intentionally keep this conservative to avoid overfitting.
     """
     t = (text or "").lower()
-    # Candidate tokens (add/remove as needed; keep short).
     candidates = [
         "c#",
         ".net",
@@ -109,7 +106,6 @@ def _resume_skill_tokens(text: str) -> List[str]:
     for tok in candidates:
         if tok in t:
             out.append(tok)
-    # De-dupe, preserve order.
     seen: set[str] = set()
     uniq: List[str] = []
     for tok in out:
@@ -172,7 +168,6 @@ def _remote_mode(proj: Dict[str, Any]) -> str:
             return "hybrid"
         except Exception:
             pass
-    # Fallback heuristic.
     title = str(proj.get("title") or "")
     desc = str(proj.get("description") or "")
     txt = (title + "\n" + desc).lower()
@@ -193,7 +188,6 @@ def _engagement_type(proj: Dict[str, Any]) -> str:
     dur = proj.get("durationInMonths")
     try:
         d = int(dur)
-        # 0/1/2 months are treated as gig-ish.
         return "gig" if d <= 2 else "long"
     except Exception:
         pass
@@ -258,7 +252,6 @@ def _score_project(proj: Dict[str, Any], *, resume_tokens: List[str]) -> Tuple[i
         score -= 3
         reasons.append("on_site")
 
-    # Resume-token overlap (small boost per token).
     hits: List[str] = []
     for tok in resume_tokens:
         if tok and tok in low:
@@ -272,7 +265,6 @@ def _score_project(proj: Dict[str, Any], *, resume_tokens: List[str]) -> Tuple[i
         score += 2
         reasons.append("has_email")
 
-    # Penalize clear location restrictions.
     if re.search(r"\b(eu nationals only|us only|uk only|germany only|belgium based|must be based)\b", low):
         score -= 4
         reasons.append("geo_restricted")
@@ -465,7 +457,6 @@ def main() -> int:
     ap.add_argument("--telegram", action="store_true", help="Send a short Telegram summary (respects TELEGRAM_REPORT=0)")
     args = ap.parse_args()
 
-    # Env
     load_env_file(ROOT / ".env")
     load_env_file(ROOT / ".env.accounts")
 
@@ -487,7 +478,6 @@ def main() -> int:
     session = requests.Session()
     timeout = (min(10.0, args.timeout_sec), args.timeout_sec)
 
-    # Fetch sitemap and prefilter by slug hints to keep load reasonable.
     projects_idx = "https://www.freelancermap.com/sitemaps/projects-0.xml"
     urls = _fetch_sitemap(session, projects_idx, timeout=timeout)
     if args.no_slug_prefilter:
@@ -518,13 +508,11 @@ def main() -> int:
                 else:
                     continue
             scanned.append(v)
-            # Soft throttle: avoid bursty behavior even with threads.
             time.sleep(0.05)
 
     scanned.sort(key=lambda x: (x.score, x.duration_months or 0), reverse=True)
     print(f"[freelancermap] scanned_fit={len(scanned)} (min_score={args.min_score})")
 
-    # Split into long vs gig (unknown goes to gig bucket but keeps label).
     long_rows = [r for r in scanned if r.engagement == "long"]
     gig_rows = [r for r in scanned if r.engagement != "long"]
 

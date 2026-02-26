@@ -1,4 +1,4 @@
-import hashlib
+﻿import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -101,7 +101,6 @@ def _lead_id(
     company: str,
     job_title: str,
 ) -> str:
-    # Stable ID across sources. Keep it simple and deterministic.
     key = "|".join(
         [
             _norm(platform).lower(),
@@ -147,10 +146,6 @@ def upsert_lead(conn: sqlite3.Connection, lead: LeadUpsert) -> str:
 
 
 def upsert_lead_with_flag(conn: sqlite3.Connection, lead: LeadUpsert) -> Tuple[str, bool]:
-    # Dedupe by (platform, lead_type, contact) first.
-    # Some sources may initially insert a job lead with blank company/title,
-    # then later re-import the same URL with richer fields. If our lead_id
-    # includes company/title, we'd create duplicates. Prefer the existing row.
     contact_norm = _norm_email(lead.contact)
     existing = conn.execute(
         """
@@ -180,7 +175,6 @@ def upsert_lead_with_flag(conn: sqlite3.Connection, lead: LeadUpsert) -> Tuple[s
     created_at = lead.created_at or _now_iso()
     raw_json = json.dumps(lead.raw or {}, ensure_ascii=False) if lead.raw is not None else None
 
-    # Insert first; then update missing fields to the latest non-empty values.
     cur = conn.execute(
         """
         INSERT OR IGNORE INTO leads
@@ -312,7 +306,6 @@ def get_last_event_by_contact(conn: sqlite3.Connection, event_type: str) -> Dict
         try:
             out[contact] = datetime.fromisoformat(ts)
         except Exception:
-            # Ignore unparsable timestamps.
             continue
     return out
 

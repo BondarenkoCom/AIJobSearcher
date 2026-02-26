@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 import re
 from dataclasses import dataclass
@@ -154,7 +154,6 @@ async def ensure_linkedin_session(
     if not ok:
         return False
 
-    # One more cookie check after navigation.
     return await has_li_at_cookie(ctx)
 
 
@@ -172,7 +171,6 @@ class SafeCloser:
             if self.pw is not None:
                 await self.pw.stop()
 
-        # Best-effort: timebox each close step so we don't hang.
         try:
             await asyncio.wait_for(_close_ctx(), timeout=timeout_sec)
         except Exception:

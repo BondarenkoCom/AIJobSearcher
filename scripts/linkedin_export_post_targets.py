@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import json
 import sys
@@ -23,7 +23,6 @@ def _canonical_profile_url(url: str) -> str:
     if not u:
         return ""
     try:
-        # LinkedIn profile canonicalization: drop query, trailing slash.
         from urllib.parse import urlparse, urlunparse
 
         p = urlparse(u)
@@ -97,7 +96,6 @@ def _fetch_post_leads(conn, *, limit: int) -> List[Dict[str, Any]]:
         action = str(triage.get("action") or "connect").strip()
         score = int(triage.get("score") or 0)
         flags = triage.get("flags") or {}
-        # Safety: don't outreach non-QA roles. "review" can be set by generic "hiring" text.
         if not bool(flags.get("qa")):
             continue
         hard_reasons = []
@@ -106,7 +104,6 @@ def _fetch_post_leads(conn, *, limit: int) -> List[Dict[str, Any]]:
         except Exception:
             hard_reasons = []
 
-        # Keep only reasonable targets.
         if status not in {"fit", "review"}:
             continue
         if score < 2:
@@ -115,13 +112,11 @@ def _fetch_post_leads(conn, *, limit: int) -> List[Dict[str, Any]]:
             continue
 
         author_url = str(raw.get("author_url") or "").strip()
-        # Outreach targets: only people profiles. Company pages are follow-only and handled elsewhere.
         if "/in/" not in author_url:
             continue
         author_name = str(raw.get("author_name") or "").strip()
         snippet = str(raw.get("snippet") or "").strip()
 
-        # Remote-only focus for now (skip hybrid/onsite/closed).
         combined = f"{job_title}\n{snippet}".lower()
         if "no longer accepting applications" in combined:
             continue
@@ -129,7 +124,6 @@ def _fetch_post_leads(conn, *, limit: int) -> List[Dict[str, Any]]:
             continue
         if "on-site" in combined or "onsite" in combined or "on site" in combined:
             continue
-        # "Remote" is usually present in either job title or snippet for good targets.
         if "remote" not in combined:
             continue
 

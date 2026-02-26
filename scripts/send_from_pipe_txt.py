@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import re
 import sys
@@ -20,7 +20,7 @@ NON_QA_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 TITLE_NOISE_RE = re.compile(
-    r"\b(we(?:'|’)?re hiring|if you(?:'|’)?re|interested candidates|open positions?:|location:|experience:|members)\b",
+    r"\b(we(?:'|вЂ™)?re hiring|if you(?:'|вЂ™)?re|interested candidates|open positions?:|location:|experience:|members)\b",
     re.IGNORECASE,
 )
 TITLE_HARD_SKIP_RE = re.compile(
@@ -111,12 +111,12 @@ def clean_job_title(raw_title: str, default_title: str) -> str:
     t = re.sub(r"\s+View job(\s+View job)*\s*$", "", t, flags=re.IGNORECASE).strip()
     t = re.sub(r"\s+Job by\s+.+$", "", t, flags=re.IGNORECASE).strip()
     t = re.sub(
-        r"\b(if you(?:'|’)?re|interested candidates|open positions?:|location:|experience:)\b.+$",
+        r"\b(if you(?:'|вЂ™)?re|interested candidates|open positions?:|location:|experience:)\b.+$",
         "",
         t,
         flags=re.IGNORECASE,
     ).strip()
-    t = re.sub(r"^we(?:'|’)?re hiring[:\s-]*", "", t, flags=re.IGNORECASE).strip()
+    t = re.sub(r"^we(?:'|вЂ™)?re hiring[:\s-]*", "", t, flags=re.IGNORECASE).strip()
     t = t.strip(" -|:,")
     if TITLE_NOISE_RE.search(t):
         t = ""
@@ -214,7 +214,6 @@ def main() -> int:
         if not is_valid_contact_email(email):
             invalid += 1
             continue
-        # Basic cleanup if someone pasted extra text.
         m = EMAIL_RE.search(email)
         if m:
             email = m.group(0)
@@ -249,7 +248,6 @@ def main() -> int:
     cfg_path = resolve_path(ROOT, args.config)
     cfg = load_config(str(cfg_path))
 
-    # Override input source for this run only (don't edit YAML).
     cfg.setdefault("email", {})
     cfg["email"]["csv_source"] = str(out_csv_path)
     if args.dry_run:

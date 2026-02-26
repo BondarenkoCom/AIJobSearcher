@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import os
 import re
@@ -64,10 +64,8 @@ async def run(args: argparse.Namespace) -> int:
             print("[li-apply] blocked by checkpoint/captcha while opening job; stopping.")
             return 3
 
-        # Let the job header/actions render.
         await page.wait_for_timeout(2000)
 
-        # Easy Apply is often rendered as a link.
         easy_a = page.locator("a[href*='openSDUIApplyFlow=true'], a[href*='/apply/?openSDUIApplyFlow=true']").first
         easy_btn = page.get_by_role("button", name=re.compile(r"easy apply", re.IGNORECASE)).first
 
@@ -96,7 +94,6 @@ async def run(args: argparse.Namespace) -> int:
         try:
             await page.wait_for_selector("div[role='dialog']", timeout=10_000)
         except PlaywrightTimeoutError:
-            # Some flows navigate instead of opening a modal.
             pass
 
         await dump_debug(ROOT, page, "apply_after_click")

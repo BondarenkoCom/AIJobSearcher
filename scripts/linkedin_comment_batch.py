@@ -95,7 +95,6 @@ def _first_name(name: str) -> str:
 
 def _clean_role_hint(text: str) -> str:
     t = re.sub(r"\s+", " ", (text or "").strip())
-    # Normalize common smart punctuation, then drop non-ascii (emojis etc) so our regexes work.
     t = (
         t.replace("\u2019", "'")
         .replace("\u201c", '"')
@@ -106,15 +105,12 @@ def _clean_role_hint(text: str) -> str:
     t = t.encode("ascii", "ignore").decode("ascii")
     t = re.sub(r"\s+", " ", t).strip()
 
-    # Cheap cleanup of common noise in post snippets.
     t = re.sub(r"\bwe('re| are)?\s+hiring\b[:\s-]*", "", t, flags=re.IGNORECASE).strip()
     t = re.sub(r"^hiring[:\s-]*", "", t, flags=re.IGNORECASE).strip()
     t = re.sub(r"\s+Job by\s+.+$", "", t, flags=re.IGNORECASE).strip()
     t = t.strip(" -|:;")
 
-    # Keep it short to avoid spammy comment walls.
     t = t[:90]
-    # If it doesn't even look like a QA role title, fall back to generic wording.
     if not re.search(r"\b(qa|quality|sdet|test|tester|automation)\b", t, flags=re.IGNORECASE):
         return ""
     return t
@@ -131,7 +127,6 @@ def _pick_comment_text(
     rec = _first_name(author_name)
     role = _clean_role_hint(job_title) or "the QA role"
 
-    # If the post already includes a hiring email, prefer asking them to confirm it (no DM promise).
     if emails:
         e = emails[0]
         variants = [
@@ -210,7 +205,6 @@ def _already_commented_post(conn, *, post_url: str) -> bool:
 
 
 def _already_emailed_any(conn, emails: List[str]) -> bool:
-    # Dedupe emails we actually sent (event_type=email_sent) to avoid double-touch.
     for e in emails or []:
         em = (e or "").strip().lower()
         if not em:
@@ -259,7 +253,6 @@ def _split_emails(value: str) -> List[str]:
         e = (part or "").strip().lower()
         if e:
             out.append(e)
-    # Prefer non-generic addresses first.
     out = sorted(set(out))
     return out[:5]
 
@@ -287,7 +280,6 @@ def _fetch_targets(conn, *, limit: int, min_score: int) -> List[CommentTarget]:
         status = str(triage.get("status") or "review").strip()
         score = int(triage.get("score") or 0)
 
-        # Keep only relevant, remote QA-ish posts.
         if status not in {"fit", "review"}:
             continue
         if score < int(min_score):
@@ -314,8 +306,6 @@ def _fetch_targets(conn, *, limit: int, min_score: int) -> List[CommentTarget]:
         emails = _split_emails(str(raw.get("emails") or ""))
         job_title = str(r["job_title"] or "").strip() or str(raw.get("job_title") or "").strip()
 
-        # If we can't even identify a profile, we can still comment by post URL.
-        # Dedupe is then only by lead_id.
         if emails and _already_emailed_any(conn, emails):
             continue
         if author_url and _already_contacted_any(conn, lead_id=lead_id, profile_url=author_url):
@@ -436,9 +426,7 @@ async def _fill_comment(page, box, text: str) -> bool:
     except Exception:
         pass
     try:
-        # Prefer keyboard typing (more human-like; triggers input handlers reliably).
         await page.keyboard.type(text, delay=random.randint(12, 28))
-        # Basic validation: innerText should now contain something.
         try:
             inner = (await box.inner_text(timeout=800)) or ""
             if inner.strip():
@@ -466,7 +454,6 @@ async def _fill_comment(page, box, text: str) -> bool:
 
 
 async def _click_post_comment(page, box, *, timeout_ms: int) -> bool:
-    # Prefer clicking a submit button near the comment box to avoid "Post" elsewhere.
     scopes = []
     try:
         scopes.append(box.locator("xpath=ancestor::form[1]"))
@@ -625,7 +612,6 @@ async def run(args: argparse.Namespace) -> int:
                 conn.commit()
                 continue
 
-            # Human-ish pacing.
             await page.wait_for_timeout(random.randint(800, 1600))
 
             clicked = await _click_comment(page, timeout_ms=1800)
@@ -753,7 +739,6 @@ async def run(args: argparse.Namespace) -> int:
                 )
                 conn.commit()
 
-            # Human rhythm delays.
             if idx < len(targets):
                 delay = random.uniform(args.min_delay_sec, args.max_delay_sec)
                 print(f"[li-comment] sleep {delay:.1f}s")

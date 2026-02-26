@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import sys
 from collections import Counter
@@ -131,7 +131,6 @@ def _import_leads_csv(conn, path: Path) -> int:
         )
         add_event(conn, lead_id=lead_id, event_type="collected", status="ok", occurred_at=file_mtime, details={"file": path.name})
 
-        # If the row says "sent" but it doesn't exist in sent_log, keep that as a separate marker.
         sent_at = _norm(r.get("sent_at", ""))
         sent_status = _norm(r.get("sent_status", "")).lower()
         if sent_at or sent_status == "sent":
@@ -216,11 +215,9 @@ def main() -> int:
         stats["blacklist_lines"] += _import_blacklist(conn, blacklist_path)
         conn.commit()
 
-        # Import "what we actually sent" first (authoritative).
         stats["sent_log_rows"] += _import_sent_log(conn, sent_log_path)
         conn.commit()
 
-        # Import lead lists (CSV + TXT) so we can query + dedupe going forward.
         for p in _iter_lead_csvs(leads_dir):
             stats["leads_csv_rows"] += _import_leads_csv(conn, p)
         conn.commit()
@@ -238,7 +235,6 @@ def main() -> int:
         print(f"[migrate] imported: leads_txt_rows={stats['leads_txt_rows']}")
         print(f"[migrate] counts: leads={counts['leads']} events={counts['events']} blocklist={counts['blocklist']}")
 
-        # Quick event type breakdown (top-level sanity check).
         rows = conn.execute("SELECT event_type, COUNT(*) AS c FROM events GROUP BY event_type ORDER BY c DESC").fetchall()
         for r in rows:
             print(f"[migrate] events: {r['event_type']}={r['c']}")

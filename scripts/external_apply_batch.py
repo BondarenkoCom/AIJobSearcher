@@ -401,7 +401,6 @@ async def _prepare_external_page(page, *, expected_domain: str = ""):
                 except Exception:
                     continue
 
-    # Ashby has a stable application route that bypasses flaky CTA click.
     try:
         host = _domain(page.url)
     except Exception:
@@ -413,7 +412,6 @@ async def _prepare_external_page(page, *, expected_domain: str = ""):
         except Exception:
             pass
 
-    # Some job boards open the actual form in a new tab/window.
     try:
         pages = [p for p in page.context.pages if p is not page]
         fallback = None
@@ -583,7 +581,6 @@ async def _apply_answer_to_control(page, el, meta: Dict[str, Any], answer: str) 
     try:
         if tag == "input" and typ in {"text", "email", "tel", "number", "url"}:
             if typ == "tel":
-                # Workable phone widgets may ignore plain fill(); fallback to typed input.
                 variants = []
                 variants.append(ans)
                 compact_plus = re.sub(r"[^\d+]", "", ans)
@@ -974,7 +971,6 @@ async def _find_external_primary_button(
             except Exception:
                 pass
 
-    # Fallback by visible text nodes.
     for txt in ["Submit", "Apply", "Continue", "Next"]:
         try:
             loc = page.locator(f"text=/{txt}/i").first
@@ -1060,8 +1056,6 @@ async def _has_cloudflare_challenge(page) -> bool:
 
 
 async def _wait_cloudflare_challenge(page, *, max_wait_sec: int = 75) -> bool:
-    # Some hosts (e.g. Workable) show temporary Cloudflare challenge pages
-    # before the real application form appears.
     if not await _has_cloudflare_challenge(page):
         return True
     loops = max(1, int(max_wait_sec // 3))

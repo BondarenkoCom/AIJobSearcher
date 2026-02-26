@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import os
 import sys
@@ -35,11 +35,9 @@ async def run(args: argparse.Namespace) -> int:
 
     headless = bool_env("PLAYWRIGHT_HEADLESS", False)
     slow_mo = int_env("PLAYWRIGHT_SLOW_MO_MS", 0)
-    # Reuse the existing persistent profile if the user didn't configure one.
     user_data_dir = Path(os.getenv("PLAYWRIGHT_USER_DATA_DIR") or (ROOT / "data" / "profiles" / "default"))
     storage_state = Path(os.getenv("LINKEDIN_STORAGE_STATE") or (ROOT / "data" / "profiles" / "linkedin_state.json"))
 
-    # Not recommended, but we support it as a fallback.
     email_ = (os.getenv("LINKEDIN_EMAIL") or "").strip()
     password_ = os.getenv("LINKEDIN_PASSWORD") or ""
 
@@ -47,7 +45,6 @@ async def run(args: argparse.Namespace) -> int:
     try:
         closer.pw = await async_playwright().start()
 
-        # Persistent context is best for LinkedIn: user can solve 2FA/CAPTCHA manually.
         closer.ctx = await closer.pw.chromium.launch_persistent_context(
             user_data_dir=str(user_data_dir),
             headless=headless,
@@ -68,13 +65,11 @@ async def run(args: argparse.Namespace) -> int:
         print("[linkedin] opening feed...")
         await page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
 
-        # If redirected to login, we either fill creds (if provided) or pause for manual login.
         url = page.url.lower()
         login_like = ("/login" in url) or ("/checkpoint/" in url) or ("/uas/" in url)
         if login_like:
             print(f"[linkedin] login required (url: {page.url})")
 
-            # Try scripted login only if both fields are present AND creds exist.
             try:
                 if email_ and password_ and not args.manual_only:
                     print("[linkedin] filling credentials...")
@@ -103,33 +98,24 @@ async def run(args: argparse.Namespace) -> int:
                 else:
                     print("[linkedin] manual login needed (no creds set or manual-only).")
             except PlaywrightTimeoutError:
-                # Could be a checkpoint / CAPTCHA / different layout.
                 print("[linkedin] login form not detected quickly; likely checkpoint/2FA/CAPTCHA.")
 
             await _handle_rehab_notice(page)
 
-            # Give the user time to complete login in the opened browser window.
-            # We do NOT attempt to bypass any checkpoint/captcha; user must do it.
             if args.wait_for_manual_seconds > 0:
                 print(f"[linkedin] waiting up to {args.wait_for_manual_seconds}s for manual login...")
                 deadline = asyncio.get_running_loop().time() + args.wait_for_manual_seconds
                 while asyncio.get_running_loop().time() < deadline:
                     await asyncio.sleep(2)
                     await _handle_rehab_notice(page)
-                    # If we're already on the feed AND have session cookies, we can proceed.
                     if "linkedin.com/feed" in page.url.lower() and await ensure_linkedin_session(root=ROOT, ctx=closer.ctx, page=page):
                         break
-                    # Some flows land on /checkpoint/; try to continue to feed after user completes.
                     if "checkpoint" not in page.url.lower() and "login" not in page.url.lower():
-                        # Try a gentle navigation; if it fails, loop continues.
                         try:
                             await page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
                         except Exception:
                             pass
 
-        # Validate: LinkedIn UI/locales vary; DOM selectors are brittle. We treat
-        # the session as OK if we can stay on /feed without being redirected to
-        # /uas/login, and we have the session cookie (li_at).
         print("[linkedin] validating session...")
         try:
             ok = await ensure_linkedin_session(root=ROOT, ctx=closer.ctx, page=page)
@@ -188,7 +174,6 @@ def main() -> int:
     try:
         return asyncio.run(asyncio.wait_for(run(args), timeout=args.timeout_seconds))
     except asyncio.TimeoutError:
-        # Extra guard: ensure we exit even if something deadlocks.
         print("[linkedin] hard timeout hit; exiting.")
         return 3
 

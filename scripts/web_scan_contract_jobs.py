@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import re
 import sys
@@ -39,24 +39,20 @@ def _safe_list(v: Any) -> List[str]:
 
 
 def _raw_job_type(raw: Dict[str, Any]) -> str:
-    # Jobicy: jobType: ["Full-Time", ...]
     jt2 = raw.get("jobType")
     if isinstance(jt2, list):
         parts = [str(x).strip() for x in jt2 if str(x).strip()]
         if parts:
             return ",".join(parts)
 
-    # Remotive: job_type: "full_time" | "contract" | ...
     jt = raw.get("job_type")
     if isinstance(jt, str) and jt.strip():
         return jt.strip()
 
-    # Arbeitnow: job_types: ["full_time", ...]
     jts = _safe_list(raw.get("job_types"))
     if jts:
         return ",".join([x.strip() for x in jts if str(x).strip()])
 
-    # RemoteOK: tags is a list
     tags = _safe_list(raw.get("tags"))
     if tags:
         return "tags:" + ",".join([x.strip() for x in tags if str(x).strip()])
@@ -145,23 +141,18 @@ def parse_args() -> argparse.Namespace:
 
 def is_remote(job: Job) -> bool:
     raw = job.raw or {}
-    # Arbeitnow explicitly tells us.
     if "remote" in raw:
         return bool(raw.get("remote") is True)
 
-    # RemoteOK is a remote-focused board; treat as remote.
     if (job.source or "").lower().startswith("remoteok"):
         return True
 
-    # Jobicy is a remote-only board; treat as remote.
     if (job.source or "").lower().startswith("jobicy"):
         return True
 
-    # Remotive is remote-only.
     if (job.source or "").lower().startswith("remotive"):
         return True
 
-    # Heuristic fallback.
     t = normalize_text(" ".join([job.location, job.description]))
     return any(k in t for k in ("remote", "worldwide", "anywhere", "work from anywhere"))
 
@@ -185,12 +176,7 @@ def main() -> int:
     jobs = dedupe_jobs(jobs)
 
     include_keywords = cfg_get(cfg, "profile.keywords.include", []) or []
-    # Exclude keywords in config are helpful, but applying them to full descriptions is too aggressive
-    # (many real QA postings mention "manager" or "intern" in context). For web boards, we exclude
-    # only by *title* to avoid false negatives.
     exclude_title_keywords = cfg_get(cfg, "profile.keywords.exclude", []) or []
-    # Location filtering in config is text-based and misses boards that expose a separate `remote` flag.
-    # For web job boards, we enforce remote-only via `is_remote()` and ignore the config location list.
     locations: List[str] = []
     min_score_cfg = int(cfg_get(cfg, "filters.min_score", 1))
     min_score = int(args.min_score) if int(args.min_score) >= 0 else min_score_cfg
@@ -211,7 +197,6 @@ def main() -> int:
 
     shortlisted = [(j, s) for (j, s) in shortlisted if is_remote(j) and not _title_is_excluded(j)]
 
-    # Optional contract-ish filter.
     shortlisted2: List[Tuple[Job, int]] = []
     for j, score in shortlisted:
         hints = contract_hints(j)
@@ -222,7 +207,6 @@ def main() -> int:
     out_dir = resolve_path(ROOT, cfg_get(cfg, "output.out_dir", "data/out"))
     out_path = resolve_path(ROOT, args.out) if args.out else (out_dir / f"contracts_scan_{now_stamp()}.csv")
 
-    # Write CSV for review.
     rows_out: List[RowOut] = []
     for j, score in shortlisted2:
         raw = j.raw or {}
@@ -240,7 +224,6 @@ def main() -> int:
         )
     _write_csv(out_path, rows_out)
 
-    # Insert into SQLite leads for UI + later processing.
     db_path = resolve_path(ROOT, str(cfg_get(cfg, "activity.db_path", "data/out/activity.sqlite")))
     conn = db_connect(db_path)
     init_db(conn)
@@ -279,7 +262,6 @@ def main() -> int:
             if ins:
                 inserted += 1
                 inserted_by_source[j.source] = inserted_by_source.get(j.source, 0) + 1
-                # Mark as "collected" once per day to keep UI state useful without event spam.
                 add_event(conn, lead_id=lid, event_type="collected", status="ok", occurred_at=today_midnight_iso())
             else:
                 updated += 1

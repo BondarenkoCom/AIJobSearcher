@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import json
 import os
@@ -141,7 +141,6 @@ def _load_target_slugs(path_text: str) -> Set[str]:
             continue
         slug = _slug_from_url(s)
         if not slug:
-            # allow plain slug line
             slug = re.sub(r"[^a-zA-Z0-9_-]+", "", s)
         slug = _text(slug).lower()
         if slug:

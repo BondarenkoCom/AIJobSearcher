@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import json
 import os
@@ -130,7 +130,6 @@ def _fetch_jobs_for_learning(conn, *, limit: int) -> List[Dict[str, str]]:
 
 
 async def _extract_external_apply_url(page) -> str:
-    # 1) direct external links with apply-like semantics.
     try:
         links = await page.evaluate(
             """() => {
@@ -188,7 +187,6 @@ async def _extract_external_apply_url(page) -> str:
     if best_url:
         return best_url
 
-    # 2) try clicking plain Apply button/link (not Easy Apply) and capture popup/tab.
     candidates = [
         page.get_by_role("link", name=re.compile(r"^apply", re.IGNORECASE)).first,
         page.get_by_role("button", name=re.compile(r"^apply", re.IGNORECASE)).first,
@@ -204,7 +202,6 @@ async def _extract_external_apply_url(page) -> str:
             if "easy apply" in label:
                 continue
 
-            # Capture popup if opened.
             try:
                 async with page.expect_popup(timeout=3000) as pop:
                     await loc.click()
@@ -220,7 +217,6 @@ async def _extract_external_apply_url(page) -> str:
             except Exception:
                 pass
 
-            # Same-tab redirect path.
             await page.wait_for_timeout(1200)
             if page.url and "linkedin.com" not in page.url:
                 return str(page.url)
@@ -230,7 +226,6 @@ async def _extract_external_apply_url(page) -> str:
 
 
 async def _profile_external_form(page, *, profile: Dict[str, str]) -> Dict[str, Any]:
-    # Open cookie banner and landing CTA if present so actual form fields become visible.
     for btn_name in ["Accept all", "Accept All", "I agree", "Agree"]:
         try:
             b = page.get_by_role("button", name=re.compile(re.escape(btn_name), re.IGNORECASE)).first

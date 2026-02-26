@@ -61,19 +61,16 @@ def _parse_rss_links(xml_text: str) -> List[str]:
 def _extract_company_from_title(title: str) -> str:
     if not title:
         return ""
-    # Example: "Company Name - Danh bạ ICT"
     if "-" in title:
         return title.split("-")[0].strip()
     return title.strip()
 
 
 def _extract_website(soup: BeautifulSoup) -> str:
-    # Prefer explicit website blocks if present
     for desc in soup.select(".elementor-image-box-description"):
         text = _clean_text(desc.get_text(strip=True))
         if text.startswith("http") or text.startswith("www."):
             return _normalize_url(text)
-    # Fallback: first external link
     for a in soup.select("a[href]"):
         href = a.get("href", "")
         if not href:

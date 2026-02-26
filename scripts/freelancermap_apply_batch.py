@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import json
 import os
@@ -101,7 +101,6 @@ def _extract_emails(raw: Dict[str, Any]) -> List[str]:
             s = str(it or "").strip().lower()
             if s and "@" in s:
                 out.append(s)
-    # preserve order + unique
     seen: Set[str] = set()
     uniq: List[str] = []
     for e in out:
@@ -190,7 +189,6 @@ def _fetch_jobs_to_apply(
 
 def _cross_method_dedupe_reason(conn, job: Dict[str, Any]) -> str:
     lead_id = str(job.get("lead_id") or "")
-    # Same lead contacted by any outreach channel.
     row = conn.execute(
         f"""
         SELECT e.event_type AS event_type
@@ -203,7 +201,6 @@ def _cross_method_dedupe_reason(conn, job: Dict[str, Any]) -> str:
     if row:
         return f"lead_already_contacted:{row['event_type']}"
 
-    # Email-level dedupe across channels.
     emails = [str(e).strip().lower() for e in (job.get("emails") or []) if str(e).strip()]
     if emails:
         ph = ",".join(["?"] * len(emails))
@@ -221,7 +218,6 @@ def _cross_method_dedupe_reason(conn, job: Dict[str, Any]) -> str:
         if row:
             return f"email_already_contacted:{row['contact']}:{row['event_type']}"
 
-    # Company-level dedupe (strict mode by design, user asked for no double contact).
     company = str(job.get("company") or "").strip().lower()
     if company:
         row = conn.execute(
@@ -291,7 +287,6 @@ async def _dump_debug(root: Path, page: Page, tag: str) -> None:
 
 
 async def _is_logged_in(page: Page) -> bool:
-    # Logged-in navbar has a Dashboard link.
     try:
         if await page.locator("a[href*='my_account']").count() > 0:
             return True
@@ -309,13 +304,11 @@ async def _ensure_session(page: Page, *, email: str, password: str, timeout_ms: 
     if await _is_logged_in(page):
         return True, "ok"
 
-    # Open login modal on public page if needed.
     try:
         await page.goto("https://www.freelancermap.com/it-projects.html", wait_until="domcontentloaded", timeout=timeout_ms)
     except Exception:
         pass
 
-    # Cookie banner can block clicks.
     for sel in [
         "button:has-text('Accept all cookies')",
         "button#onetrust-accept-btn-handler",
@@ -329,7 +322,6 @@ async def _ensure_session(page: Page, *, email: str, password: str, timeout_ms: 
         except Exception:
             continue
 
-    # Open login modal.
     opened = False
     for sel in [
         "button[data-testid='login-button']",
@@ -374,7 +366,6 @@ async def _ensure_session(page: Page, *, email: str, password: str, timeout_ms: 
             pass
     await page.wait_for_timeout(1800)
 
-    # Re-check via dashboard route.
     try:
         await page.goto("https://www.freelancermap.com/my_account.html", wait_until="domcontentloaded", timeout=timeout_ms)
     except Exception:
@@ -387,7 +378,6 @@ async def _ensure_session(page: Page, *, email: str, password: str, timeout_ms: 
 async def _open_apply_form(page: Page) -> Tuple[bool, str]:
     if _is_verification_gate_url(page.url):
         return False, "paywall_verification_required"
-    # Try clicking top CTA first.
     for _ in range(2):
         try:
             btn = page.locator("[data-testid='contact-button']").first
@@ -468,7 +458,6 @@ async def _apply_once(
     await cover.fill(message)
 
     if attach_cv:
-        # Usually this is the existing profile CV checkbox.
         await _set_checkbox_by_selector(page, "input[type='checkbox'][id*='singleCheckbox']", True)
     await _set_checkbox_by_selector(page, "input[type='checkbox'][name='sendEmail']", bool(send_email_flag))
     await _set_checkbox_by_selector(page, "input[type='checkbox'][name='sendPhone']", bool(send_phone_flag))
@@ -500,7 +489,6 @@ async def _apply_once(
     if "captcha" in body or "recaptcha" in body:
         return "needs_manual", "captcha"
     if "applications remaining this month" in body:
-        # If no explicit success string but page stayed healthy after click.
         return "needs_manual", "submit_uncertain_check_inbox"
     return "needs_manual", "submit_result_unclear"
 

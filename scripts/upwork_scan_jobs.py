@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import csv
 import json
@@ -550,7 +550,6 @@ async def _collect_links_from_category(
             if n:
                 page_urls.append(n)
 
-        # Fallback for odd pages where links are not attached to anchors at the time of query.
         if not page_urls:
             html_text = await page.content()
             for m in re.finditer(r"(/freelance-jobs/apply/[^\"'<>\\s]+)", html_text):
@@ -726,7 +725,6 @@ async def _run_scan(
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await page.set_extra_http_headers({"Accept-Language": "en-US,en;q=0.9"})
 
-        # Probe find-work first as requested.
         try:
             await page.goto(UPWORK_FIND_WORK, wait_until="domcontentloaded", timeout=90_000)
             await page.wait_for_timeout(1800)

@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import html as htmllib
 import re
@@ -41,14 +41,10 @@ def today_midnight_iso() -> str:
 
 
 def _strip_html(text: str) -> str:
-    # Algolia returns comment `text` as HTML.
     s = htmllib.unescape(text or "")
-    # Keep simple line breaks.
     s = s.replace("<p>", "\n").replace("</p>", "\n")
     s = s.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
-    # Strip tags.
     s = re.sub(r"<[^>]+>", " ", s)
-    # Collapse horizontal whitespace, keep \n for paragraph boundaries.
     s = re.sub(r"[ \t\r\f\v]+", " ", s)
     s = re.sub(r"\\n\\s*\\n\\s*", "\n", s)
     return s.strip()
@@ -101,7 +97,6 @@ def parse_header(line1: str) -> Tuple[str, str, str]:
     title = _pick_best_part(tail, ROLE_PART_RE)
     location = _pick_best_part(tail, LOC_PART_RE, skip=title)
 
-    # If role wasn't detected, fall back to first non-company segment that isn't just type.
     if not title:
         for p in tail:
             if TYPE_PART_RE.search(p or ""):
@@ -109,13 +104,11 @@ def parse_header(line1: str) -> Tuple[str, str, str]:
             title = p
             break
 
-    # If location still missing, keep empty (HN posts often specify it later).
     return company, title, location
 
 
 def _extract_emails(text: str) -> List[str]:
     emails = [m.group(0).strip() for m in EMAIL_RE.finditer(text or "")]
-    # Dedupe, preserve order.
     out: List[str] = []
     seen = set()
     for e in emails:
@@ -152,7 +145,6 @@ def is_remote_text(text: str) -> bool:
 
 
 def is_qa_text(text: str) -> bool:
-    # QA-ish markers. Avoid generic "testing" because it appears in many non-QA roles.
     t = text or ""
     return bool(
         re.search(
@@ -214,7 +206,6 @@ def _write_csv(path: Path, rows: Iterable[RowOut]) -> None:
 
 
 def _thread_title_for(month: str) -> str:
-    # month: YYYY-MM
     dt = datetime.strptime(month + "-01", "%Y-%m-%d")
     return f"Ask HN: Who is hiring? ({dt.strftime('%B %Y')})"
 
@@ -237,7 +228,6 @@ def _find_thread_id(title: str) -> Optional[str]:
     hits = data.get("hits") or []
     if not hits:
         return None
-    # Prefer exact title match.
     for h in hits:
         if (h.get("title") or "").strip() == title and h.get("objectID"):
             return str(h["objectID"])
@@ -278,8 +268,6 @@ def main() -> int:
         line1 = _first_line(text)
         company, title, location = parse_header(line1)
 
-        # Prefer a concrete QA/SDET/Test role phrase anywhere in the post, so multi-role headers
-        # ("PM, Designers, QA Engineers, ...") become a single QA lead.
         m_role = ROLE_PART_RE.search(line1) or ROLE_PART_RE.search(text)
         if m_role:
             title = m_role.group(0).strip()
@@ -316,12 +304,8 @@ def main() -> int:
     jobs = dedupe_jobs(jobs)
 
     include_keywords = cfg_get(cfg, "profile.keywords.include", []) or []
-    # Do not exclude based on full post text: HN comments often list many roles (incl. Intern/Manager)
-    # but still contain a QA opening. We'll keep the QA lead and let the user decide later.
     exclude_keywords: List[str] = []
 
-    # HN is free-form. Gate by (remote) + (QA-ish) mostly from the header/title to avoid non-QA roles
-    # that only mention QA/testing in passing.
     candidates: List[Job] = []
     for j in jobs:
         raw = j.raw or {}
@@ -375,7 +359,6 @@ def main() -> int:
         )
     _write_csv(out_path, rows_out)
 
-    # Insert into SQLite leads.
     db_path = resolve_path(ROOT, str(cfg_get(cfg, "activity.db_path", "data/out/activity.sqlite")))
     conn = db_connect(db_path)
     init_db(conn)

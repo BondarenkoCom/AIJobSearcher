@@ -63,7 +63,6 @@ def collect_vinasa_members(url: str, location: str, source: str, timeout_sec: fl
     if not tables:
         return []
 
-    # pick table with most rows as member list
     best = max(tables, key=lambda t: len(t.select("tr")))
     leads: List[CompanyLead] = []
 
@@ -71,7 +70,6 @@ def collect_vinasa_members(url: str, location: str, source: str, timeout_sec: fl
         cells = row.select("td,th")
         if not cells:
             continue
-        # use last cell as the main text container
         text = _clean_text(cells[-1].get_text(" ", strip=True))
         parsed = _parse_entry(text)
         if not parsed.get("name"):

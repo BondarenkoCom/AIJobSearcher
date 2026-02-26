@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import json
 import os
@@ -266,7 +266,6 @@ def _fetch_candidates(
         if not text:
             continue
 
-        # Guard: exclude own control/log chats from Telegram sources.
         if _safe(row.get("platform")).lower() == "telegram":
             merged_meta = " ".join(
                 [
@@ -278,10 +277,8 @@ def _fetch_candidates(
             if any(h in merged_meta for h in OWN_CHAT_HINTS):
                 continue
 
-        # Hard guard: only technical/test-ish tasks.
         if not (QA_RE.search(title) or QA_RE.search(text) or AUTOMATION_RE.search(text)):
             continue
-        # Strong anti-mismatch guard: drop broad dev/lead roles unless they are explicitly short automation gigs.
         if NONFIT_TITLE_RE.search(title):
             if not (AUTOMATION_GIG_RE.search(title + "\n" + text) and SHORT_GIG_RE.search(title + "\n" + text)):
                 continue
@@ -294,10 +291,8 @@ def _fetch_candidates(
         if (remote_mode == "on_site") or ONSITE_RE.search(location):
             continue
         if not (remote_mode == "remote" or REMOTE_RE.search(location + "\n" + text)):
-            # Keep only clearly remote-friendly gigs.
             continue
         if engagement == "long":
-            # User asked for short gigs, not long-term contracts.
             continue
         if LONG_TERM_RE.search(text) and not SHORT_GIG_RE.search(text):
             continue
@@ -406,7 +401,6 @@ def _heuristic_score(c: Candidate) -> Tuple[float, Dict[str, Any]]:
         score -= 7
         risks.append("title_not_fit")
 
-    # Convert to a convenient 0..10 bucket for later weighted merge.
     score_0_10 = max(0.0, min(10.0, (score + 8.0) / 2.0))
     meta = {
         "heuristic_raw": round(score, 2),
@@ -434,7 +428,6 @@ def _is_probable_short_oneoff(c: Candidate) -> bool:
         return True
     if ONEOFF_HINT_RE.search(txt):
         return True
-    # Posts/projects with explicit freelance/contract language are often direct gigs.
     if c.lead_type in {"post", "project"} and re.search(r"\b(freelance|contract|paid)\b", txt, re.IGNORECASE):
         return True
     return False
@@ -651,7 +644,6 @@ def _merge_and_rank(
         wsum = sum(w for _, w in components) or 1.0
         final = sum(v * w for v, w in components) / wsum
 
-        # Conservative drop: at least one "brain" says domain mismatch strongly.
         hard_drop = False
         for s in (oscore, xscore):
             if not s:
@@ -681,7 +673,6 @@ def _merge_and_rank(
     if len(primary) >= int(limit):
         return primary[: int(limit)]
 
-    # If council is too strict and returns too few, fill with conservative heuristic backups.
     backup.sort(key=lambda x: (float(x.get("heuristic_0_10") or 0), float(x.get("heuristic_raw") or 0)), reverse=True)
     for b in backup:
         if len(primary) >= int(limit):
@@ -692,7 +683,6 @@ def _merge_and_rank(
             continue
         if ("domain_mismatch" in risks) or ("title_not_fit" in risks):
             continue
-        # Lower confidence marker for reporting.
         b2 = dict(b)
         b2["openai_reason"] = (_safe(b2.get("openai_reason")) + " | fallback_by_heuristic").strip(" |")
         primary.append(b2)
@@ -786,7 +776,6 @@ def main() -> int:
     ap.add_argument("--telegram", action="store_true")
     args = ap.parse_args()
 
-    # Load accounts secrets first so API keys from .env.accounts win over legacy .env values.
     load_env_file(ROOT / ".env.accounts")
     load_env_file(ROOT / ".env")
 
@@ -836,7 +825,6 @@ def main() -> int:
                 meta["heuristic_raw"] = round(float(meta.get("heuristic_raw", 0.0)) - 1.2, 2)
                 meta["risks"] = list(meta.get("risks") or []) + ["lead_type_job"]
 
-        # Prefer only probable short gigs.
         if heur_0_10 < float(args.min_heuristic):
             continue
         if c.emails:
@@ -882,7 +870,6 @@ def main() -> int:
         print("[gig-hunt] no candidates passed scoring threshold.")
         return 0
 
-    # Pre-sort before council to keep token/cost bounded.
     scored_rows.sort(key=lambda x: (float(x.get("heuristic_0_10") or 0), float(x.get("heuristic_raw") or 0)), reverse=True)
     council_input = scored_rows[: min(len(scored_rows), max(20, int(args.limit) * 2))]
     council_payload = [

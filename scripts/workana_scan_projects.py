@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import html
 import json
@@ -208,7 +208,6 @@ def _remote_mode(text: str) -> str:
         return "on_site"
     if HYBRID_RE.search(low):
         return "hybrid"
-    # On Workana, freelance projects are remote by default unless explicitly restricted.
     return "remote"
 
 
@@ -222,7 +221,6 @@ def _engagement_type(item: Dict[str, Any], text: str) -> str:
     if GIG_HINT_RE.search(low):
         return "gig"
 
-    # If no signal, fixed-price freelance tasks are treated as gig by default.
     return "gig"
 
 

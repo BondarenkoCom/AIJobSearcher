@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import os
 import random
 import re
@@ -40,7 +40,7 @@ NON_QA_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 TITLE_NOISE_RE = re.compile(
-    r"\b(we(?:'|’)?re hiring|if you(?:'|’)?re|interested candidates|open positions?:|location:|experience:|members)\b",
+    r"\b(we(?:'|вЂ™)?re hiring|if you(?:'|вЂ™)?re|interested candidates|open positions?:|location:|experience:|members)\b",
     re.IGNORECASE,
 )
 TITLE_HARD_SKIP_RE = re.compile(
@@ -252,12 +252,12 @@ def _clean_job_title(value: str, default_title: str) -> str:
     title = re.sub(r"\s+View job(\s+View job)*\s*$", "", title, flags=re.IGNORECASE).strip()
     title = re.sub(r"\s+Job by\s+.+$", "", title, flags=re.IGNORECASE).strip()
     title = re.sub(
-        r"\b(if you(?:'|’)?re|interested candidates|open positions?:|location:|experience:)\b.+$",
+        r"\b(if you(?:'|вЂ™)?re|interested candidates|open positions?:|location:|experience:)\b.+$",
         "",
         title,
         flags=re.IGNORECASE,
     ).strip()
-    title = re.sub(r"^we(?:'|’)?re hiring[:\s-]*", "", title, flags=re.IGNORECASE).strip()
+    title = re.sub(r"^we(?:'|вЂ™)?re hiring[:\s-]*", "", title, flags=re.IGNORECASE).strip()
     title = title.strip(" -|:,")
     if TITLE_NOISE_RE.search(title):
         title = ""
@@ -332,7 +332,6 @@ def _role_pitch_for_title(title: str) -> str:
 
 
 def _build_variables(job: Dict[str, str], cfg: Dict[str, object]) -> Dict[str, str]:
-    # contact_name might be present but empty (e.g. generated CSVs). Avoid "Hi ,"
     contact_name = normalize_person_name(str(job.get("contact_name") or "")).strip()
     variables = {
         "job_title": job.get("title", ""),
@@ -372,7 +371,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
     if not cfg_get(cfg, "email.enabled", False):
         return 0
 
-    # Load .env files if present (local secrets; ignored by git)
     load_env_file(root / ".env")
     load_env_file(root / ".env.accounts")
 
@@ -383,7 +381,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
         print(f"[email] sender lock exists: {lock_path} (another send is running)")
         return 0
 
-    # Optional SQLite activity tracking (authoritative, cross-source de-dup in the future).
     activity_enabled = bool(cfg_get(cfg, "activity.enabled", False))
     db_conn = None
 
@@ -413,7 +410,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
 
     template_path = resolve_path(root, str(cfg_get(cfg, "email.template", "templates/email_en.txt")))
     template = template_path.read_text(encoding="utf-8") if template_path.exists() else ""
-    # If template includes a Subject: line, strip it from the body to avoid duplication.
     if template:
         lines = template.splitlines()
         if lines and lines[0].strip().lower().startswith("subject:"):
@@ -447,20 +443,16 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
     blacklist_path = resolve_path(root, str(cfg_get(cfg, "email.blacklist_path", "data/out/blacklist.txt")))
     sent_log_path = resolve_path(root, str(cfg_get(cfg, "email.sent_log_path", "data/out/sent_log.csv")))
 
-    # Prefer activity DB as the source of truth for dedupe (blocklist + last sent),
-    # but keep sent_log.csv + blacklist.txt as a backup/portable export.
     blacklist = _load_blacklist(blacklist_path)
 
     counts_by_date: Dict[datetime.date, int] = {}
     last_by_email: Dict[str, datetime] = {}
     if db_conn is not None:
         try:
-            # Ensure file-based blocklist is also represented in the DB.
             for email in blacklist:
                 add_to_blocklist(db_conn, contact=email, reason="file:blacklist.txt")
             db_conn.commit()
 
-            # Merge DB blocklist into the effective in-memory blocklist.
             blacklist.update(get_blocklist_contacts(db_conn))
 
             counts_by_date = get_event_counts_by_day(db_conn, "email_sent")
@@ -569,7 +561,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
         to_norm = _normalize_email(to_email)
         lead_id = None
 
-        # Ensure the lead exists in activity DB even if we end up skipping the send.
         if db_conn is not None:
             try:
                 now0 = datetime.now().isoformat(timespec="seconds")
@@ -601,7 +592,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
             except Exception:
                 lead_id = None
 
-        # If this row was already processed in the past, skip it.
         if sent_status_field and row.get(sent_status_field, "").strip().lower() == sent_status_value.lower():
             continue
         if sent_field and row.get(sent_field, "").strip():
@@ -623,7 +613,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
         if skip_sent_days > 0:
             last_sent = last_by_email.get(to_norm)
             if last_sent and datetime.now() - last_sent < timedelta(days=skip_sent_days):
-                # Avoid re-sending to the same address; also mark the row to prevent future retries.
                 if mark_sent_in_source and not dry_run and sent_field:
                     row[sent_field] = last_sent.isoformat(timespec="seconds")
                     if sent_status_field:
@@ -683,7 +672,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
                     )
                     db_conn.commit()
                 except Exception:
-                    # Don't fail sending if DB is locked/broken.
                     pass
             _append_sent_log(
                 sent_log_path,
@@ -719,7 +707,6 @@ def send_applications(root: Path, cfg: Dict[str, object]) -> int:
     if mark_sent_in_source and updated_source and not dry_run:
         _write_csv(csv_path, fieldnames, rows)
 
-    # Optional end-of-send sound notification.
     try:
         from .notify import notify_done
 

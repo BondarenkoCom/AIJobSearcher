@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import os
 import re
@@ -165,12 +165,10 @@ class AutoController:
         if token:
             return token
 
-        # Back-compat alias for older env naming.
         legacy = (os.getenv("OPENCLAW_API_KEY") or "").strip()
         if legacy:
             return legacy
 
-        # Local fallback: read token from OpenClaw runtime config.
         cfg_path = Path.home() / ".openclaw" / "openclaw.json"
         try:
             raw = json.loads(cfg_path.read_text(encoding="utf-8"))

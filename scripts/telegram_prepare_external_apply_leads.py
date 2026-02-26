@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import json
 import re
 import sys
@@ -43,7 +43,6 @@ def _canonical_url(url: str) -> str:
         p = urlparse(u)
         netloc = (p.netloc or "").lower()
         path = (p.path or "").rstrip("/")
-        # Keep query only for known application forms that often need tokens.
         keep_query_hosts = ("greenhouse.io", "lever.co", "workable.com", "ashbyhq.com")
         keep_query = any(h in netloc for h in keep_query_hosts)
         return urlunparse((p.scheme or "https", p.netloc, path, "", (p.query if keep_query else ""), ""))

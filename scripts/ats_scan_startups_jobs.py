@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import json
 import random
@@ -160,7 +160,6 @@ def main() -> int:
     ats_cfg = cfg_get(cfg, "ats", {}) or {}
     enabled_types = ats_cfg.get("types", {"greenhouse": True, "lever": True}) or {"greenhouse": True, "lever": True}
     enabled_types = {k: bool(v) for k, v in dict(enabled_types).items()}
-    # Force only greenhouse+lever (they have public APIs in our code).
     for k in list(enabled_types.keys()):
         if k not in ("greenhouse", "lever"):
             enabled_types[k] = False
@@ -183,7 +182,6 @@ def main() -> int:
         by_type[s.ats_type] = by_type.get(s.ats_type, 0) + 1
     print(f"[ats-startups] ATS sources found: {len(sources)} types={by_type}")
 
-    # Persist ATS sources for debugging/reuse.
     out_dir = resolve_path(ROOT, cfg_get(cfg, "output.out_dir", "data/out"))
     sources_path = out_dir / f"ats_startups_sources_{now_stamp()}.csv"
     try:
@@ -201,7 +199,6 @@ def main() -> int:
     jobs = dedupe_jobs(jobs)
     print(f"[ats-startups] jobs fetched from ATS APIs: {len(jobs)}")
 
-    # Filter to remote-only + QA relevance via config keywords.
     include_keywords = cfg_get(cfg, "profile.keywords.include", []) or []
     exclude_keywords = cfg_get(cfg, "profile.keywords.exclude", []) or []
     _all, shortlisted = filter_and_score(
@@ -223,7 +220,6 @@ def main() -> int:
         if len(final) >= int(args.jobs_limit):
             break
 
-    # Persist to leads DB.
     inserted = 0
     updated = 0
     rows_out: List[RowOut] = []

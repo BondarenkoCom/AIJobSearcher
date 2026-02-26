@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import json
 import os
@@ -67,7 +67,6 @@ async def _dump_debug(page, tag: str) -> None:
 
 
 def _search_url(query: str, *, sort: str = "top") -> str:
-    # LinkedIn content search. Works only when logged in.
     from urllib.parse import quote_plus
 
     q = quote_plus(query.strip())
@@ -78,8 +77,6 @@ def _search_url(query: str, *, sort: str = "top") -> str:
 
 
 async def _extract_visible_posts(page) -> List[Dict[str, str]]:
-    # Extract the currently visible content results.
-    # Keep this selector-free as much as possible; LinkedIn DOM changes frequently.
     js = """
     () => {
       const out = [];
@@ -194,7 +191,6 @@ def _extract_emails(text: str) -> str:
 def _guess_title(snippet: str) -> str:
     if not snippet:
         return "LinkedIn post lead"
-    # First sentence/line is usually enough for UI preview.
     first = re.split(r"[.\n]", snippet, maxsplit=1)[0].strip()
     if not first:
         return "LinkedIn post lead"
@@ -211,9 +207,6 @@ def _classify_post(snippet: str, *, query: str = "") -> Dict[str, object]:
     hiring = bool(HIRING_RE.search(txt))
     qa = bool(QA_RE.search(txt))
     remote = bool(REMOTE_RE.search(txt))
-    # Heuristic: if the search query itself is remote-focused, treat the post as remote unless
-    # we find a hard blocker like "on-site only". LinkedIn content snippets sometimes omit
-    # the "Remote" badge/metadata even when the role is remote.
     q = (query or "").lower()
     if (not remote) and ("remote" in q):
         remote = True
@@ -294,8 +287,6 @@ def _persist_posts(conn, *, query: str, rows: List[Dict[str, str]]) -> Dict[str,
         status = str(triage.get("status") or "review")
         action = str(triage.get("action") or "connect")
 
-        # Key leads by the person/company we can contact. Many content results share the same job URL
-        # but have different authors; using author_url keeps unique outreach targets.
         contact = author_url or post_url
         lead = LeadUpsert(
             platform="linkedin",
@@ -317,8 +308,6 @@ def _persist_posts(conn, *, query: str, rows: List[Dict[str, str]]) -> Dict[str,
             },
         )
         lead_id, inserted = upsert_lead_with_flag(conn, lead)
-        # For LinkedIn posts we want the latest triage/snippet cached even when the lead already exists
-        # (same author/company). The generic upsert only fills raw_json once.
         try:
             conn.execute(
                 "UPDATE leads SET raw_json = ? WHERE lead_id = ?",
@@ -397,7 +386,6 @@ async def run(args: argparse.Namespace) -> int:
             print("[li-posts] blocked by checkpoint/captcha; stopping.")
             return 4
 
-        # Wait for something that indicates the page rendered.
         try:
             await page.wait_for_timeout(1500)
         except Exception:
@@ -434,7 +422,6 @@ async def run(args: argparse.Namespace) -> int:
             if len(collected) >= args.limit:
                 break
 
-            # Scroll down to load more.
             await page.mouse.wheel(0, args.scroll_px)
             await page.wait_for_timeout(args.scroll_wait_ms)
 
@@ -448,7 +435,6 @@ async def run(args: argparse.Namespace) -> int:
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         out_csv = out_dir / f"linkedin_posts_{_slug(args.query)}_{stamp}.csv"
 
-        # Cap to limit.
         collected = collected[: args.limit]
 
         import csv
@@ -514,7 +500,6 @@ def main() -> int:
     ap.add_argument("--timezone-id", default="", help="Optional tz id, e.g. 'Asia/Ho_Chi_Minh'")
     args = ap.parse_args()
 
-    # Keep LinkedIn in English to make extraction stable.
     args.force_en = True
 
     try:

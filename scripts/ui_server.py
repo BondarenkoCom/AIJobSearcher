@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import html
 import json
 import os
@@ -239,7 +239,6 @@ class UIHandler(SimpleHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         qs = parse_qs(parsed.query)
 
-        # Simple JSON endpoints (useful for future UI tweaks).
         if path == "/api/health":
             ok = self._db_path.exists()
             self._send_json({"ok": ok, "db": str(self._db_path)})
@@ -262,7 +261,6 @@ class UIHandler(SimpleHTTPRequestHandler):
             self._handle_blocklist()
             return
 
-        # Static assets under ui/ (css).
         return super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802
@@ -302,7 +300,6 @@ class UIHandler(SimpleHTTPRequestHandler):
             if not lead:
                 self._redirect(next_url)
                 return
-            # Manual "wrote to lead" is enabled only for LinkedIn post leads.
             if str(lead["platform"]) != "linkedin" or str(lead["lead_type"]) != "post":
                 self._redirect(next_url)
                 return
@@ -533,7 +530,6 @@ class UIHandler(SimpleHTTPRequestHandler):
                 base[k] = v
             return urlencode({k: v for k, v in base.items() if v})
 
-        # Pager
         last_page = max(0, (total - 1) // per) if total else 0
         first_href = f"/leads?{qp(p='0')}"
         prev_href = f"/leads?{qp(p=str(max(0, page - 1)))}"
@@ -927,7 +923,6 @@ def main() -> int:
     print(f"[ui] serving {url}")
 
     if not args.no_open:
-        # Open in a background thread to avoid blocking server start.
         def _open() -> None:
             try:
                 webbrowser.open(url, new=2)

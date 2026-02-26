@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import os
 import re
@@ -169,7 +169,6 @@ def csv_path(value: str) -> Path:
 def run(args: argparse.Namespace) -> int:
     cfg = load_config(str(ROOT / "config" / "config.yaml"))
     include_terms = list(dict.fromkeys(list(QA_TERMS) + [str(x).lower() for x in cfg_get(cfg, "profile.keywords.include", []) or []]))
-    # Keep include terms list for additional QA hits if config expands.
     for t in include_terms:
         if t not in QA_TERMS:
             QA_TERMS.add(t)

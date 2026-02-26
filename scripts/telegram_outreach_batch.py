@@ -123,7 +123,6 @@ def _already_contacted(conn, lead_id: str, handle: str) -> bool:
     if row is not None:
         return True
 
-    # Cross-lead dedupe by Telegram handle in event details.
     row = conn.execute(
         """
         SELECT 1

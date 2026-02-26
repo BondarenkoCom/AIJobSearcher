@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import csv
 import re
@@ -32,12 +32,12 @@ JOB_TERMS = (
     "test automation",
     "sdet",
     "automation",
-    "вакан",
-    "работа",
-    "фриланс",
-    "удален",
-    "удалён",
-    "тестиров",
+    "РІР°РєР°РЅ",
+    "СЂР°Р±РѕС‚Р°",
+    "С„СЂРёР»Р°РЅСЃ",
+    "СѓРґР°Р»РµРЅ",
+    "СѓРґР°Р»С‘РЅ",
+    "С‚РµСЃС‚РёСЂРѕРІ",
 )
 BAD_TERMS = (
     "crypto",
@@ -59,7 +59,6 @@ def read_refs(path: Path) -> List[str]:
         s = line.strip().lstrip("\ufeff").strip()
         if s and not s.startswith("#"):
             out.append(s)
-    # de-dup keep order
     seen = set()
     uniq: List[str] = []
     for x in out:
@@ -152,7 +151,6 @@ async def run(args: argparse.Namespace) -> int:
                 keep = True
                 reason = f"title_score={title_score}"
             else:
-                # Fallback: inspect recent messages for job signals.
                 max_s = -999
                 try:
                     async for msg in client.iter_messages(ent, limit=max(1, int(args.msg_limit))):
@@ -186,7 +184,6 @@ async def run(args: argparse.Namespace) -> int:
                 }
             )
 
-    # de-dup kept in order
     seen = set()
     uniq_kept: List[str] = []
     for x in kept:

@@ -255,7 +255,6 @@ def main() -> int:
     imap.login(username, password)
     mailbox = args.mailbox
     mailbox_select = mailbox
-    # Gmail folders like "[Gmail]/All Mail" need quoting for IMAP SELECT.
     if " " in mailbox_select and not (mailbox_select.startswith('"') and mailbox_select.endswith('"')):
         mailbox_select = f'"{mailbox_select}"'
     imap.select(mailbox_select)
@@ -293,8 +292,6 @@ def main() -> int:
 
         from_addrs = _extract_addrs(msg, "From")
         from_addr = from_addrs[0] if from_addrs else ""
-        # If scanning "[Gmail]/All Mail", it includes our own outgoing messages too.
-        # Skip those, since this script is meant for inbound analytics.
         if _normalize_email(from_addr) == our_email:
             continue
 

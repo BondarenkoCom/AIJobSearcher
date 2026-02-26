@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import sqlite3
 from collections import Counter
 from datetime import datetime
@@ -63,12 +63,10 @@ def main() -> int:
             ).fetchall()
             for r in sent:
                 ts = r["occurred_at"]
-                # Keep output compact.
                 company = (r["company"] or "")[:40]
                 title = (r["job_title"] or "")[:45]
                 print(f"  {ts} | {r['contact']} | {company} | {title}")
 
-        # Daily counts for recent 14 days (best-effort).
         daily = conn.execute(
             """
             SELECT substr(occurred_at, 1, 10) AS day, COUNT(*) AS c

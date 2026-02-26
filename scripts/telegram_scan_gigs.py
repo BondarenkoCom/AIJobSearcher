@@ -467,7 +467,6 @@ async def run(args: argparse.Namespace) -> int:
                 if matched >= args.max_results:
                     break
                 try:
-                    # Discover source channels/chats by name (public usernames).
                     found = await client(functions.contacts.SearchRequest(q=query, limit=args.discover_source_limit))
                     for ch in list(getattr(found, "chats", []) or []):
                         uname = str(getattr(ch, "username", "") or "").strip()

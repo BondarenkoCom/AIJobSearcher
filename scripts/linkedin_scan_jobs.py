@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import csv
 import os
@@ -44,27 +44,23 @@ def _split_doc_title(doc_title: str) -> Tuple[str, str, str]:
 
     parts = [p.strip() for p in t.split(" | ")]
 
-    # 4-part format: title | workplace | company | LinkedIn
     if len(parts) >= 4 and parts[-1].lower().startswith("linkedin"):
         company = parts[-2].strip()
         workplace = parts[-3].strip()
         job_title = " | ".join(parts[:-3]).strip()
         return (job_title, workplace, company)
 
-    # 3-part format: title | company | LinkedIn (no workplace in title)
     if len(parts) >= 3 and parts[-1].lower().startswith("linkedin"):
         company = parts[-2].strip()
         job_title = " | ".join(parts[:-2]).strip()
         return (job_title, "", company)
 
-    # Fallback: keep the whole title as "job_title" if we can't parse.
     return (t, "", "")
 
 
 def _canonical_job_url(href: str) -> str:
     if not href:
         return ""
-    # Normalize to a stable job view URL.
     m = re.search(r"/jobs/view/([0-9]+)", href)
     if not m:
         return ""
@@ -73,7 +69,6 @@ def _canonical_job_url(href: str) -> str:
 
 
 def _jobs_search_url(query: str, location: str) -> str:
-    # Keep it simple: location="Remote" works well enough, we still post-filter on the job page.
     q = quote_plus((query or "").strip())
     loc = quote_plus((location or "").strip())
     return f"https://www.linkedin.com/jobs/search/?keywords={q}&location={loc}"
@@ -122,7 +117,6 @@ async def _scroll_results(page, px: int) -> str:
 
 
 async def _extract_job_links(page) -> List[str]:
-    # Pull candidate job URLs from the current DOM.
     js = """
     () => {
       const out = [];
@@ -153,7 +147,6 @@ async def _extract_job_links(page) -> List[str]:
         u = _canonical_job_url(h)
         if u:
             urls.append(u)
-    # Keep original order but dedupe.
     seen: Set[str] = set()
     uniq: List[str] = []
     for u in urls:
@@ -165,7 +158,6 @@ async def _extract_job_links(page) -> List[str]:
 
 
 async def _extract_job_detail(page) -> Dict[str, str]:
-    # LinkedIn DOM changes frequently; prefer stable sources (document.title + body text).
     try:
         doc_title = await page.title()
     except Exception:
@@ -194,7 +186,6 @@ async def _extract_job_detail(page) -> Dict[str, str]:
     if text:
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
-        # If workplace wasn't present in document.title, try to infer it from the header pills.
         if not workplace:
             for ln in lines:
                 if ln in {"Remote", "Hybrid", "On-site"}:
@@ -207,7 +198,6 @@ async def _extract_job_detail(page) -> Dict[str, str]:
                 location = ln.split(bullet)[0].strip()
                 break
 
-        # Grab a short snippet from the "About the job" section if present.
         for i, ln in enumerate(lines):
             if ln.lower() == "about the job":
                 snippet = " ".join(lines[i + 1 : i + 6]).strip()[:280]
@@ -227,7 +217,6 @@ async def _extract_apply(page) -> Tuple[str, str]:
     Returns (apply_type, apply_url)
     apply_type: easy_apply | external | unknown
     """
-    # Try Easy Apply link (often rendered as <a> on modern job pages).
     easy_a = page.locator("a[href*='openSDUIApplyFlow=true'], a[href*='/apply/?openSDUIApplyFlow=true']").first
     try:
         if await easy_a.is_visible(timeout=1_500):
@@ -238,7 +227,6 @@ async def _extract_apply(page) -> Tuple[str, str]:
     except Exception:
         pass
 
-    # Fallback: Easy Apply button.
     easy_btn = page.get_by_role("button", name=re.compile(r"easy apply", re.IGNORECASE))
     try:
         if await easy_btn.first.is_visible(timeout=1_500):
@@ -246,7 +234,6 @@ async def _extract_apply(page) -> Tuple[str, str]:
     except Exception:
         pass
 
-    # External apply link (company site).
     try:
         ext = page.locator("a[href^='http']").filter(has_text=re.compile(r"\\bapply\\b", re.IGNORECASE)).first
         if await ext.is_visible(timeout=1_500):
@@ -295,7 +282,6 @@ async def run(args: argparse.Namespace) -> int:
         chromium_args = ["--start-maximized"]
         extra_headers = None
         if args.force_en:
-            # Force English UI to keep text-based extraction stable.
             chromium_args.append("--lang=en-US")
             extra_headers = {"Accept-Language": "en-US,en;q=0.9"}
         closer.ctx = await closer.pw.chromium.launch_persistent_context(
@@ -321,8 +307,6 @@ async def run(args: argparse.Namespace) -> int:
         base_search_url = _jobs_search_url(args.query, args.location)
         print(f"[li-jobs] base search: {base_search_url}")
 
-        # LinkedIn Jobs search is paginated (commonly 25 results per page) via the `start=` param.
-        # This is more reliable than trying to scroll the virtualized list container.
         page_size = 25
         candidates: List[str] = []
         seen: Set[str] = set()
@@ -340,8 +324,6 @@ async def run(args: argparse.Namespace) -> int:
                 tag_on_fail="jobs_search_failed",
             )
             if not ok:
-                # If we already have candidates, proceed with what we collected instead
-                # of throwing the whole run away.
                 print("[li-jobs] search page failed (checkpoint/captcha?)")
                 if candidates:
                     print(f"[li-jobs] proceeding with collected candidates (n={len(candidates)})")
@@ -363,9 +345,6 @@ async def run(args: argparse.Namespace) -> int:
                 candidates.append(u)
                 new_on_page += 1
 
-                # Persist job URLs immediately so a later crash/checkpoint doesn't waste the run.
-                # We store only the stable identifier (job_url) here; rich fields are filled later
-                # during the detail-open stage.
                 try:
                     lead_id, inserted = upsert_lead_with_flag(
                         db_conn,
@@ -393,7 +372,6 @@ async def run(args: argparse.Namespace) -> int:
                         )
                     db_conn.commit()
                 except Exception:
-                    # Best-effort; candidate persistence should never break scanning.
                     pass
 
             print(f"[li-jobs] candidates={len(candidates)} (+{new_on_page})")
@@ -414,7 +392,6 @@ async def run(args: argparse.Namespace) -> int:
             print("[li-jobs] no candidates collected (see debug dump).")
             return 4
 
-        # Reuse one detail page to avoid blowing up tabs.
         detail = await closer.ctx.new_page()
         detail.set_default_timeout(args.step_timeout_ms)
         detail.set_default_navigation_timeout(args.step_timeout_ms)
@@ -429,7 +406,6 @@ async def run(args: argparse.Namespace) -> int:
             if job_url in collected_urls:
                 continue
             if not args.include_seen:
-                # Skip jobs already collected previously to maximize NEW jobs per run.
                 try:
                     if db_conn.execute(
                         """
@@ -446,7 +422,6 @@ async def run(args: argparse.Namespace) -> int:
                     ).fetchone():
                         continue
                 except Exception:
-                    # DB failures shouldn't kill the run.
                     pass
 
             ok = await goto_guarded(root=ROOT, page=detail, url=job_url, timeout_ms=args.step_timeout_ms, tag_on_fail="job_open_failed")
@@ -454,7 +429,6 @@ async def run(args: argparse.Namespace) -> int:
                 print("[li-jobs] blocked (checkpoint/captcha) while opening job; stopping.")
                 break
 
-            # Give LinkedIn a moment to render the job header/actions.
             await detail.wait_for_timeout(random.randint(900, 1600))
 
             data = await _extract_job_detail(detail)
@@ -497,8 +471,6 @@ async def run(args: argparse.Namespace) -> int:
                     reject_reason = "not_remote"
 
             if reject_reason:
-                # Still persist the extracted details so we don't re-open the same job over and over
-                # on subsequent runs (and so the UI has context).
                 try:
                     lead_id, _inserted = upsert_lead_with_flag(
                         db_conn,
@@ -533,7 +505,6 @@ async def run(args: argparse.Namespace) -> int:
             row["apply_type"] = apply_type
             row["apply_url"] = apply_url
 
-            # Write to DB (leads + collected event).
             try:
                 lead_id, inserted = upsert_lead_with_flag(
                     db_conn,
@@ -551,8 +522,6 @@ async def run(args: argparse.Namespace) -> int:
                     ),
                 )
                 row["lead_id"] = lead_id
-                # Record "collected" once when a job passes filters and we extracted details.
-                # We may have inserted the lead earlier while persisting candidate URLs.
                 if not db_conn.execute(
                     "SELECT 1 FROM events WHERE lead_id = ? AND event_type = 'collected' LIMIT 1",
                     (lead_id,),
@@ -567,13 +536,11 @@ async def run(args: argparse.Namespace) -> int:
                     )
                 db_conn.commit()
             except Exception:
-                # Don't kill the run on DB issues.
                 row["lead_id"] = ""
 
             out_rows.append(row)
             collected_urls.add(job_url)
 
-            # Small human-ish delay between job opens.
             await detail.wait_for_timeout(random.randint(args.min_job_delay_ms, args.max_job_delay_ms))
             if args.long_break_every > 0 and len(out_rows) % args.long_break_every == 0 and len(out_rows) < args.limit:
                 await detail.wait_for_timeout(random.randint(args.long_break_min_ms, args.long_break_max_ms))
@@ -666,7 +633,6 @@ def main() -> int:
     ap.add_argument("--force-en", action="store_true", help="Try to force en-US locale for the browser context")
     ap.add_argument("--timezone-id", default="", help="Optional tz id, e.g. 'Asia/Ho_Chi_Minh'")
 
-    # Human-ish pacing between job opens.
     ap.add_argument("--min-job-delay-ms", type=int, default=700, help="Min delay between job page opens")
     ap.add_argument("--max-job-delay-ms", type=int, default=1800, help="Max delay between job page opens")
     ap.add_argument("--long-break-every", type=int, default=8, help="Long break every N kept jobs")
@@ -675,11 +641,8 @@ def main() -> int:
 
     args = ap.parse_args()
 
-    # Always prefer English UI to keep selectors and extracted text stable.
     args.force_en = True
 
-    # Remote-first (per your job search requirement). If --allow-vietnam is set,
-    # we still keep Vietnam roles even when they are not marked as Remote.
     args.remote_only = True
 
     try:

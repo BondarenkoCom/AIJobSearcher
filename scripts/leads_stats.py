@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import sys
 from collections import Counter, defaultdict
@@ -20,7 +20,6 @@ def _norm_email(s: str) -> str:
 
 
 def _norm_company(s: str) -> str:
-    # Keep it simple; we mostly need a stable "unique company" key.
     return " ".join(_norm(s).lower().split())
 
 
@@ -195,12 +194,10 @@ def main() -> int:
     inv_path = out_dir / f"leads_inventory_{stamp}.csv"
     _write_inventory(inv_path, leads)
 
-    # Pending (unique emails not yet sent by our bot)
     pending_map: Dict[str, Lead] = {}
     for l in leads:
         if l.sent_by_bot:
             continue
-        # Keep the first-seen row as representative for this email.
         if l.contact_email not in pending_map:
             pending_map[l.contact_email] = l
 

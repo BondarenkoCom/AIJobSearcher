@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import re
 import sys
 from pathlib import Path
@@ -32,7 +32,6 @@ def _section(text: str, start: str, end: str) -> str:
 
 
 def _find_next_header(lines: List[str], start_idx: int) -> int:
-    # Treat ALLCAPS lines as headers (e.g. ACHIEVEMENTS, LANGUAGES).
     hdr = re.compile(r"^[A-Z][A-Z0-9 &/]+$")
     for i in range(start_idx, len(lines)):
         t = (lines[i] or "").strip()
@@ -48,7 +47,6 @@ def _parse_top(lines: List[str]) -> Dict[str, str]:
     if len(lines) > 1:
         out["candidate.title"] = (lines[1] or "").strip()
 
-    # Contact line: "Vietnam, Ho Chi Minh City | +84 ... | email"
     if len(lines) > 2:
         parts = [p.strip() for p in (lines[2] or "").split("|")]
         if parts:
@@ -58,7 +56,6 @@ def _parse_top(lines: List[str]) -> Dict[str, str]:
         if len(parts) > 2:
             out["candidate.email"] = parts[2]
 
-    # Links: LinkedIn / Upwork / GitHub
     blob = "\n".join(lines[:12])
     m = re.search(r"LinkedIn:\s*([^\s|]+)", blob, flags=re.IGNORECASE)
     if m:
@@ -97,7 +94,6 @@ def _seed_answers(profile: Dict[str, str]) -> List[Tuple[str, str]]:
         "coordinating via Jira and CI pipelines and verifying releases end-to-end."
     )
     if summary:
-        # Keep it short and consistent.
         remote_ans = remote_ans
 
     qa_interest = (
@@ -145,7 +141,6 @@ def main() -> int:
     profile = _parse_top(lines)
     profile["candidate.summary"] = _section(raw, "SUMMARY", "EXPERIENCE")
 
-    # Skills section: from "SKILLS" to next ALLCAPS header (e.g., ACHIEVEMENTS).
     low_lines = [ln.strip() for ln in lines]
     try:
         skills_idx = next(i for i, ln in enumerate(low_lines) if ln.strip().upper() == "SKILLS")

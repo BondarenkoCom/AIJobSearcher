@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import json
 import os
@@ -18,7 +18,6 @@ from src.profile_store import load_profile  # noqa: E402
 
 
 async def _run(*, controller: AutoController, profile: dict) -> int:
-    # Use a URL within the default allowlist so safety gating doesn't block the test.
     page_url = "https://www.linkedin.com/jobs/view/0/"
     page_title = "Controller smoke test"
     questions = [
@@ -47,7 +46,6 @@ async def _run(*, controller: AutoController, profile: dict) -> int:
 
 
 def _probe_api(controller: AutoController) -> None:
-    # Minimal direct call to surface common errors (bad key, model not found, wrong base URL).
     path = (controller.request_path or "/chat/completions").strip()
     if not path.startswith("/"):
         path = "/" + path
@@ -93,7 +91,6 @@ def main() -> int:
     ap.add_argument("--enable", action="store_true", help="Force-enable controller for this run")
     args = ap.parse_args()
 
-    # Load local secrets if present.
     load_env_file(ROOT / ".env")
     load_env_file(ROOT / ".env.accounts")
 
