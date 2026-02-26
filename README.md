@@ -2,6 +2,8 @@
 AIJobSearcher
 =============
 
+![AIJobSearcher cover](assets/searche2r.png)
+
 Practical scanner toolkit for collecting and tracking remote QA/testing leads.
 
 Overview
