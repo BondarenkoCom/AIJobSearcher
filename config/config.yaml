@@ -1,0 +1,285 @@
+﻿profile:
+  title: "QA Engineer (Manual + Automation)"
+  keywords:
+    include:
+      - QA
+      - QA Engineer
+      - Quality Assurance
+      - SDET
+      - Test Engineer
+      - Software Test
+      - Automation
+      - C#
+      - .NET
+      - Selenium
+      - Playwright
+    exclude:
+      - Director
+      - VP
+      - Head of QA
+      - Manager
+      - Intern
+      - Internship
+      - Student
+      - Marketing
+      - Growth Hacker
+      - Data Analyst
+  locations:
+    - Remote
+    - Worldwide
+    - Global
+    - Work from anywhere
+
+candidate:
+  name: "Your Name"
+  phone: "+00 000 000 000"
+  email: "your.email@example.com"
+  linkedin: "https://linkedin.com/in/your-profile"
+  base_location: "Your City, Country"
+  timezone: "UTC+0"
+
+sources:
+  manual_csv:
+    enabled: true
+    path: "data/inbox/manual_jobs.csv"
+  http_json:
+    - name: "remotive_remote_qa"
+      enabled: true
+      method: "GET"
+      url: "https://remotive.com/api/remote-jobs"
+      params:
+        search: "qa"
+      headers: {}
+      json: {}
+      list_path: "jobs"
+      mapping:
+        title: "title"
+        company: "company_name"
+        location: "candidate_required_location"
+        url: "url"
+        description: "description"
+        contact_email: ""
+      static:
+        source: "remotive_api"
+    - name: "arbeitnow_remote_qa"
+      enabled: true
+      method: "GET"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      params:
+        search: "qa"
+        remote: "true"
+      headers: {}
+      json: {}
+      list_path: "data"
+      mapping:
+        title: "title"
+        company: "company_name"
+        location: "location"
+        url: "url"
+        description: "description"
+        contact_email: ""
+      static:
+        source: "arbeitnow_api"
+    - name: "remoteok_remote_qa"
+      enabled: true
+      method: "GET"
+      url: "https://remoteok.com/api"
+      params:
+        tags: "qa"
+      headers:
+        User-Agent: "Mozilla/5.0"
+        Accept: "application/json"
+      json: {}
+      list_path: ""
+      mapping:
+        title: "position"
+        company: "company"
+        location: "location"
+        url: "apply_url"
+        description: "description"
+        contact_email: ""
+      static:
+        source: "remoteok_api"
+    - name: "jobicy_remote_qa"
+      enabled: true
+      method: "GET"
+      url: "https://jobicy.com/api/v2/remote-jobs"
+      params:
+        count: 50
+        tag: "qa"
+      headers:
+        User-Agent: "Mozilla/5.0"
+        Accept: "application/json"
+      json: {}
+      list_path: "jobs"
+      mapping:
+        title: "jobTitle"
+        company: "companyName"
+        location: "jobGeo"
+        url: "url"
+        description: "jobDescription"
+        contact_email: ""
+      static:
+        source: "jobicy_api"
+
+company_sources:
+  - type: "vinasa_members"
+    name: "vinasa_hanoi"
+    enabled: false
+    legal_confirmed: true
+    url: "https://vinasa.org.vn/vinasa-en/5/3144/4304/hanoi/"
+    location: "Hanoi"
+  - type: "vinasa_members"
+    name: "vinasa_hcmc"
+    enabled: false
+    legal_confirmed: true
+    url: "https://vinasa.org.vn/vinasa-en/5/3144/4305/ho-chi-minh/"
+    location: "Ho Chi Minh"
+  - type: "vinasa_members"
+    name: "vinasa_others"
+    enabled: false
+    legal_confirmed: true
+    url: "https://vinasa.org.vn/vinasa-en/5/3144/4306/others/"
+    location: "Others"
+  - type: "danhbaict"
+    name: "danhbaict"
+    enabled: false
+    legal_confirmed: true
+    list_url: "https://danhbaict.vn/doanh-nghiep/"
+    feed_url: "https://danhbaict.vn/doanh-nghiep/feed/"
+    max_pages: 3
+    max_items: 200
+    fetch_details: true
+    sleep_sec: 0.2
+
+ats:
+  enabled: false
+  companies_csv: "data/out/companies.csv"
+  start_index: 0
+  max_companies: 50
+  max_links_per_company: 3
+  scan_links: true
+  scan_common_paths: true
+  fetch_jobs: true
+  types:
+    greenhouse: true
+    lever: true
+    workable: false
+    ashby: false
+    smartrecruiters: false
+  progress_every: 5
+  sleep_sec: 0.2
+  timeout_sec: 8
+  jobs_timeout_sec: 20
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+
+email:
+  enabled: false
+  dry_run: true
+  csv_source: "data/inbox/manual_jobs.csv"  # all | shortlist | path/to/file.csv
+  qa_only: true
+  default_job_title: "QA Automation Engineer"
+  from_email: "your.email@example.com"
+  reply_to: "your.email@example.com"
+  subject: "Application for {job_title}"
+  template: "templates/email_en.txt"
+  work_pref_remote: "I am seeking remote-only roles (based in {base_location}, {timezone})."
+  work_pref_vietnam: "I am based in {base_location} and can work onsite/hybrid."
+  attachments: []
+  blacklist_path: "data/out/blacklist.txt"
+  sent_log_path: "data/out/sent_log.csv"
+  mark_sent_in_source: true
+  sent_field: "sent_at"
+  sent_status_field: "sent_status"
+  sent_status_value: "sent"
+  rate_limit:
+    daily_limit: 200
+    max_daily_increase: 30
+    run_limit: 50
+    skip_sent_days: 90
+    min_delay_sec: 25
+    max_delay_sec: 90
+    long_break_every: 7
+    long_break_min_sec: 120
+    long_break_max_sec: 300
+    apply_in_dry_run: false
+  bounce_check:
+    enabled: false
+    imap_host: "imap.gmail.com"
+    imap_username: "your.email@example.com"
+    imap_password_env: "IMAP_PASSWORD"
+    search: 'SUBJECT "Undelivered"'
+    days: 14
+    max_messages: 200
+    mark_seen: false
+    mailbox: "INBOX"
+  smtp:
+    host: "smtp.gmail.com"
+    port: 587
+    use_tls: true
+    username: "your.email@example.com"
+    password_env: "SMTP_PASSWORD"
+
+filters:
+  min_score: 3
+  max_results: 200
+
+output:
+  out_dir: "data/out"
+  write_all: "jobs_all.csv"
+  write_shortlist: "jobs_shortlist.csv"
+  write_companies: "companies.csv"
+  write_ats_sources: "ats_sources.csv"
+
+notify:
+  enabled: false
+  # Back-compat: if you set only sound_path it will be used for "done" and as a fallback.
+  sound_path: ""
+  # Optional per-situation sounds (recommended).
+  sounds:
+    done: ""
+    attention: ""
+    timeout: ""
+    error: ""
+  wait: true
+
+activity:
+  enabled: true
+  db_path: "data/out/activity.sqlite"
+
+controller:
+  enabled: false
+  provider: "openai_compatible"  # openai_compatible | openclaw
+  model: "gpt-4o-mini"
+  api_base: "https://api.openai.com/v1"  # openclaw local: "http://127.0.0.1:18789/v1"
+  request_path: "/chat/completions"
+  api_key_env: "OPENAI_API_KEY"  # openclaw uses openclaw.gateway_token_env
+  timeout_sec: 25
+  max_tokens: 900
+  temperature: 0.1
+  max_questions_per_call: 12
+  openclaw:
+    agent_id: ""
+    agent_id_env: "OPENCLAW_AGENT_ID"
+    gateway_token_env: "OPENCLAW_GATEWAY_TOKEN"
+  safety:
+    allow_untrusted_hosts: false
+    max_context_chars: 12000
+    allowed_hosts:
+      - "*.linkedin.com"
+      - "*.workable.com"
+      - "*.greenhouse.io"
+      - "*.lever.co"
+      - "*.ashbyhq.com"
+      - "*.smartrecruiters.com"
+    forbidden_prompt_patterns:
+      - "ignore previous instructions"
+      - "reveal system prompt"
+      - "developer message"
+      - "api key"
+      - "private key"
+      - "secret token"
+      - "password"
+
+
+

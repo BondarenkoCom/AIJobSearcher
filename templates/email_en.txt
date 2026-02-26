@@ -1,0 +1,18 @@
+﻿Subject: Application for {job_title}
+
+Hi {contact_name_or_team},
+
+I am applying for the {job_title} role at {company}. I have 5+ years in QA (manual + automation), strong API testing, and C#/.NET automation experience.
+
+Key match:
+- API and auth testing (REST/GraphQL)
+- Automation in C#/.NET (NUnit, RestSharp)
+- CI pipelines and release verification
+
+Resume attached. {work_preference} I can start immediately.
+
+Best regards,
+{candidate_name}
+{phone}
+{email}
+LinkedIn: {linkedin}

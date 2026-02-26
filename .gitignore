@@ -1,0 +1,23 @@
+﻿.venv/
+__pycache__/
+*.pyc
+
+# Local secrets
+.env
+.env.*.local
+.env.accounts
+
+# Runtime data and sessions
+data/
+*.sqlite
+*.db
+*.session
+
+# Playwright/browser artifacts
+playwright-report/
+
+# OS/editor noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
