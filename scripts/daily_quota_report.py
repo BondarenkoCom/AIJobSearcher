@@ -70,11 +70,6 @@ def main() -> int:
         actual = {k: _count_leads_today(conn, k, day) for k in quotas.keys()}
         sends = {
             "email_sent": _count_events_today(conn, "email_sent", day),
-            "tg_dm_sent": _count_events_today(conn, "tg_dm_sent", day),
-            "li_apply_submitted": _count_events_today(conn, "li_apply_submitted", day),
-            "external_apply_submitted": _count_events_today(conn, "external_apply_submitted", day),
-            "fm_apply_submitted": _count_events_today(conn, "fm_apply_submitted", day),
-            "wa_apply_submitted": _count_events_today(conn, "wa_apply_submitted", day),
         }
 
         print(f"[quota] day={day} db={db_path}")

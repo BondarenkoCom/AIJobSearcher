@@ -29,13 +29,6 @@ from src.telegram_notify import send_telegram_message  # noqa: E402
 
 CONTACT_EVENTS = (
     "email_sent",
-    "li_connect_sent",
-    "li_dm_sent",
-    "li_comment_posted",
-    "li_apply_submitted",
-    "external_apply_submitted",
-    "fm_apply_submitted",
-    "wa_apply_submitted",
 )
 
 QA_RE = re.compile(

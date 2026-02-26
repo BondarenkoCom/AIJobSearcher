@@ -2,22 +2,22 @@
 AIJobSearcher
 =============
 
-Practical toolkit for collecting and tracking remote QA/testing leads.
+Practical scanner toolkit for collecting and tracking remote QA/testing leads.
 
 Overview
 --------
 
 - Collect job and project leads from public APIs and web sources
 - Normalize and store leads in SQLite
-- Apply deterministic filtering and deduplication
-- Run optional outreach/apply workflows with rate limits
+- Run deterministic filtering and deduplication
+- Run SMTP email outreach workflows
 - Inspect results via reports and local UI
 
 Repository layout
 -----------------
 
 - `src/` core modules (DB, routing, helpers)
-- `scripts/` operational flows (scan/apply/report/orchestrators)
+- `scripts/` operational flows (scan/report/SMTP)
 - `config/config.yaml` runtime settings
 - `templates/` outreach templates
 - `ui/` local UI assets
@@ -26,7 +26,7 @@ Repository layout
 Templates
 ---------
 
-The `templates/` folder contains outreach email/apply text samples.
+The `templates/` folder contains SMTP outreach email text samples.
 
 Before real usage, update these templates with your own:
 
@@ -35,6 +35,12 @@ Before real usage, update these templates with your own:
 - message tone and role-specific value proposition
 
 Do not send stock templates as-is.
+
+Scope of this public snapshot
+-----------------------------
+
+- Includes: scanning, filtering, SQLite tracking, SMTP sending.
+- Excludes: platform button-click automation (Easy Apply / Apply flows).
 
 Quick start (Windows)
 ---------------------

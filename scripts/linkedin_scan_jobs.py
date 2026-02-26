@@ -214,8 +214,8 @@ async def _extract_job_detail(page) -> Dict[str, str]:
 
 async def _extract_apply(page) -> Tuple[str, str]:
     """
-    Returns (apply_type, apply_url)
-    apply_type: easy_apply | external | unknown
+    Returns (application_route, application_url)
+    application_route: platform | external | unknown
     """
     easy_a = page.locator("a[href*='openSDUIApplyFlow=true'], a[href*='/apply/?openSDUIApplyFlow=true']").first
     try:
@@ -223,14 +223,14 @@ async def _extract_apply(page) -> Tuple[str, str]:
             href = (await easy_a.get_attribute("href")) or ""
             if href.startswith("/"):
                 href = "https://www.linkedin.com" + href
-            return ("easy_apply", href)
+            return ("platform", href)
     except Exception:
         pass
 
     easy_btn = page.get_by_role("button", name=re.compile(r"easy apply", re.IGNORECASE))
     try:
         if await easy_btn.first.is_visible(timeout=1_500):
-            return ("easy_apply", "")
+            return ("platform", "")
     except Exception:
         pass
 
