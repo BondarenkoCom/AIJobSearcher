@@ -4,12 +4,12 @@ Hi {contact_name_or_team},
 
 I'm reaching out with an open application for a QA Engineer / QA Automation role at {company}. I have 5+ years in QA (manual + automation), strong API testing, and C#/.NET automation experience.
 
-I'm particularly interested in product-focused startups, especially teams building AI-powered products, where quality and fast, safe releases matter. In my current role, I also built an AI-assisted bug reporting pipeline that generates structured Jira tickets from QA notes/artifacts via Jira API (with Telegram notifications).
+I'm interested in product-focused startups where quality and fast, safe releases matter. In my current role, I built a bug reporting pipeline that converts QA notes/artifacts into structured Jira tickets via Jira API (with Telegram notifications).
 
 Key match:
 - API and auth testing (REST/GraphQL)
 - Automation in C#/.NET (NUnit, RestSharp)
-- AI-assisted QA tooling (Jira ticket generation from QA notes/artifacts)
+- QA tooling (Jira ticket generation from QA notes/artifacts)
 - CI pipelines and release verification
 
 Resume attached. {work_preference} I can start immediately.

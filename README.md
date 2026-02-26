@@ -1,28 +1,30 @@
 ﻿
-Automation toolkit for collecting and tracking remote QA/software-testing opportunities across multiple sources.
+AIJobSearcher
+=============
 
+Practical toolkit for collecting and tracking remote QA/testing leads.
 
-- Collects job/project leads from public APIs and web sources.
-- Normalizes and stores leads in SQLite.
-- Applies deterministic filtering and deduplication.
-- Supports optional outreach/apply workflows with rate limits.
-- Provides local analytics and a simple UI for monitoring pipeline status.
+Overview
+--------
 
+- Collect job and project leads from public APIs and web sources
+- Normalize and store leads in SQLite
+- Apply deterministic filtering and deduplication
+- Run optional outreach/apply workflows with rate limits
+- Inspect results via reports and local UI
 
-- Multi-source scanning (job boards, freelance boards, social channels).
-- Unified activity DB (`data/out/activity.sqlite`) with event history.
-- Safety-first throttling and skip logic.
-- Optional model-assisted ranking layer (can be disabled).
-- Script-based modular workflow (`scripts/` directory).
+Repository layout
+-----------------
 
-
-- `src/` core modules (DB, routing, controller helpers)
-- `scripts/` operational scripts (scan/apply/report/orchestration)
+- `src/` core modules (DB, routing, helpers)
+- `scripts/` operational flows (scan/apply/report/orchestrators)
 - `config/config.yaml` runtime settings
 - `templates/` outreach templates
 - `ui/` local UI assets
-- `Docs/FREELANCE_AUTOMATION_PATH.md` strategy notes
+- `Docs/FREELANCE_AUTOMATION_PATH.md` implementation notes
 
+Quick start (Windows)
+---------------------
 
 ```powershell
 python -m venv .venv
@@ -33,16 +35,24 @@ Copy-Item .env.example .env
 Copy-Item .env.accounts.example .env.accounts
 ```
 
-Then adjust `config/config.yaml` and run a scanner, for example:
+Example run:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\upwork_scan_jobs.py --write-db --query "qa automation"
 ```
 
+Security
+--------
 
-- This public version is sanitized.
-- Secrets, local sessions, personal documents, and runtime datasets are excluded.
-- Keep real credentials only in local `.env` / `.env.accounts` files.
+This repository is a sanitized public snapshot.
 
+- No runtime DB/data exports
+- No local sessions
+- No private credentials
 
-Use the toolkit responsibly and follow platform Terms of Service and local regulations.
+Keep real credentials only in local `.env` and `.env.accounts` files.
+
+Notes
+-----
+
+Use responsibly and follow platform Terms of Service and local laws.

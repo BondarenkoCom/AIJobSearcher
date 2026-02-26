@@ -19,7 +19,7 @@ from src.email_jobs import send_applications
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="AI Job Searcher - CLI MVP")
+    parser = argparse.ArgumentParser(description="Job Searcher CLI")
     parser.add_argument(
         "--config",
         default="config/config.yaml",

@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import asyncio
 import re
 import sys
@@ -201,8 +201,8 @@ async def run(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Assign Telegram sources to a dialog folder via Telethon user session.")
-    ap.add_argument("--folder-title", default="🖥AI Auto Gig")
-    ap.add_argument("--folder-emoticon", default="💼")
+    ap.add_argument("--folder-title", default="AI Auto Gig")
+    ap.add_argument("--folder-emoticon", default="")
     ap.add_argument("--folder-id", type=int, default=0, help="Optional explicit folder id. 0 = auto.")
     ap.add_argument("--keep-existing-title", action="store_true")
     ap.add_argument("--strict-sync", dest="strict_sync", action="store_true", help="Folder peers = exactly sources refs.")
@@ -225,3 +225,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
