@@ -83,10 +83,6 @@ def main() -> int:
     if default_offer not in offers:
         offers.insert(0, default_offer)
 
-    if not args.skip_bootstrap:
-        for offer in offers:
-            _run_pipeline(offer, short_limit=args.short_limit)
-
     stop_event = threading.Event()
     refresh_thread = None
     if not args.skip_refresh_loop:
@@ -101,6 +97,9 @@ def main() -> int:
             daemon=True,
         )
         refresh_thread.start()
+    elif not args.skip_bootstrap:
+        for offer in offers:
+            _run_pipeline(offer, short_limit=args.short_limit)
 
     bot_cmd = [
         sys.executable,
