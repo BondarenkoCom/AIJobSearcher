@@ -1,0 +1,61 @@
+Remote Work Hunter: profession scanner matrix
+Updated: 2026-03-01
+
+Current profession packs
+- qa_gig_hunter: strongest pack right now
+- software_engineering_hunter: viable with public feeds + HN + optional LinkedIn
+- data_ai_hunter: viable with public feeds + HN + optional LinkedIn
+- cybersecurity_hunter: viable but narrower market
+- devops_cloud_hunter: viable with public feeds + HN + optional LinkedIn
+- remote_job_hunter: lighter QA-only jobs feed
+
+Scanner coverage by pack
+
+qa_gig_hunter
+- scripts/web_scan_contract_jobs.py
+- scripts/hn_scan_whoishiring.py
+- scripts/workana_scan_projects.py
+- scripts/freelancermap_scan_projects.py
+- scripts/reddit_scan_gigs.py
+- scripts/upwork_scan_jobs.py (optional)
+- scripts/telegram_scan_gigs.py (optional)
+- scripts/linkedin_scan_jobs.py (optional)
+- scripts/linkedin_scan_posts.py (optional)
+
+software_engineering_hunter
+- scripts/web_scan_contract_jobs.py
+- scripts/hn_scan_whoishiring.py
+- scripts/linkedin_scan_jobs.py (optional)
+- scripts/linkedin_scan_posts.py (optional)
+
+data_ai_hunter
+- scripts/web_scan_contract_jobs.py
+- scripts/hn_scan_whoishiring.py
+- scripts/linkedin_scan_jobs.py (optional)
+- scripts/linkedin_scan_posts.py (optional)
+
+cybersecurity_hunter
+- scripts/web_scan_contract_jobs.py
+- scripts/hn_scan_whoishiring.py
+- scripts/linkedin_scan_jobs.py (optional)
+- scripts/linkedin_scan_posts.py (optional)
+
+devops_cloud_hunter
+- scripts/web_scan_contract_jobs.py
+- scripts/hn_scan_whoishiring.py
+- scripts/linkedin_scan_jobs.py (optional)
+- scripts/linkedin_scan_posts.py (optional)
+
+What is honest right now
+- QA has the deepest market coverage because several scanners were built QA-first.
+- Non-QA packs currently rely on generic public job feeds and LinkedIn/HN, not on Upwork/Workana/Freelancermap specialization.
+- The bot can offer profession choice only for packs that have real scanner coverage behind them.
+
+What is not honest yet
+- Claiming full parity across all professions.
+- Claiming that Upwork, Telegram gigs, Workana, and Freelancermap are already generalized for software/data/security/devops.
+
+Next expansion targets
+- Public ATS boards: Workable, Ashby, SmartRecruiters, Teamtailor, Recruitee
+- Startup -> ATS chain for profession packs
+- Generalized Reddit/Telegram/Upwork scanners beyond QA-first heuristics

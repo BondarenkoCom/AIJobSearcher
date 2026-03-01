@@ -144,16 +144,6 @@ def is_remote_text(text: str) -> bool:
     return any(k in t for k in ("remote", "distributed", "anywhere", "work from anywhere", "worldwide"))
 
 
-def is_qa_text(text: str) -> bool:
-    t = text or ""
-    return bool(
-        re.search(
-            r"(?i)(?:\bqa\b|qa engineer|qa automation|quality assurance|quality assurance engineer|quality engineer|\bsdet\b|test engineer|testing engineer|test automation|test automation engineer|software tester|software test)",
-            t,
-        )
-    )
-
-
 def contract_hints(text: str) -> bool:
     return bool(CONTRACT_HINT_RE.search(text or ""))
 
@@ -210,6 +200,16 @@ def _thread_title_for(month: str) -> str:
     return f"Ask HN: Who is hiring? ({dt.strftime('%B %Y')})"
 
 
+def _previous_month(month: str) -> str:
+    dt = datetime.strptime(month + "-01", "%Y-%m-%d")
+    year = dt.year
+    month_num = dt.month - 1
+    if month_num <= 0:
+        year -= 1
+        month_num = 12
+    return f"{year:04d}-{month_num:02d}"
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Scan Hacker News 'Who is hiring' thread via Algolia API.")
     p.add_argument("--config", default="config/config.yaml", help="Path to config YAML.")
@@ -240,8 +240,18 @@ def main() -> int:
     args = parse_args()
     cfg = load_config(str(resolve_path(ROOT, args.config)))
 
-    thread_title = _thread_title_for(args.month)
+    requested_month = args.month
+    thread_title = _thread_title_for(requested_month)
     thread_id = _find_thread_id(thread_title)
+    if not thread_id:
+        fallback_month = _previous_month(requested_month)
+        fallback_title = _thread_title_for(fallback_month)
+        fallback_id = _find_thread_id(fallback_title)
+        if fallback_id:
+            print(f"[hn] thread not found for {requested_month}, fallback -> {fallback_month}")
+            args.month = fallback_month
+            thread_title = fallback_title
+            thread_id = fallback_id
     if not thread_id:
         print(f"[hn] thread not found: {thread_title}")
         return 2
@@ -312,8 +322,6 @@ def main() -> int:
         header = f"{raw.get('line1','')} {j.title} {j.location}".strip()
         remote_blob = f"{header}\n{j.description}".strip()
         if not is_remote_text(remote_blob):
-            continue
-        if not is_qa_text(header):
             continue
         candidates.append(j)
 

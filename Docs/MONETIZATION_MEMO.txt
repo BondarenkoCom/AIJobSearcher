@@ -1,0 +1,113 @@
+AIJobSearcher monetization memo
+Date: 2026-03-01
+
+Goal
+- Stop thinking about "job search tool" as the product.
+- Treat the system as a lead engine that can be packaged into paid offers.
+- Keep only directions that can realistically bring money.
+
+What we take first
+1. Telegram
+- Best first money channel.
+- Good for paid lead feed, subscription, or pay-per-drop.
+- Fits the current project because Telegram notifications and Telegram lead scanning already exist.
+
+2. Poe
+- Best platform if we want "publish bot and platform monetizes usage/messages".
+- Good as a second distribution layer after Telegram.
+
+3. Nevermined
+- Keep as later infra/agent marketplace play.
+- Useful after we have a proven offer and stable backend/API.
+
+What we do NOT prioritize now
+- LINE
+  Too Japan-specific operationally.
+- WeChat
+  Too much friction, compliance, and account complexity.
+- OpenAI GPT Store
+  Weak monetization path for us right now.
+- TikTok Minis
+  Bad fit for this product right now.
+- Random marketplaces without built-in monetization
+  Low leverage.
+
+Bot brand
+- Remote Work Hunter
+- Meaning: one global bot brand for jobs, gigs, and contract leads.
+- Profession packs can live inside the same bot later.
+
+First sellable offer
+- QA Gig Hunter
+- Meaning: daily shortlist of paid QA / test automation / Playwright / Selenium / API testing gigs.
+- This is the clearest first product because the repo already has relevant scanners.
+
+Second possible offer
+- Remote Job Hunter
+- Meaning: remote QA jobs for longer-term roles.
+- Keep as secondary product, not first.
+
+Scanners we keep in the money stack
+- Telegram gigs
+- Upwork
+- Workana
+- Freelancermap
+- LinkedIn posts
+- Reddit
+- gig_hunt_select as final shortlist layer
+
+Scanners we do not make central
+- Generic API job boards as the main product
+- ATS / startup scans
+- Broad long-term hiring scans
+- Niche scans unless they directly prove money
+
+Current product logic
+- One engine, multiple offers.
+- The bot can be repackaged for other work types without rewriting the whole system.
+- We mainly change:
+  - offer definition
+  - source mix
+  - filters
+  - keywords
+  - output format
+
+How to retarget later
+- QA Gig Hunter
+- Remote Job Hunter
+- Automation Client Hunter
+- Bug Fix Lead Hunter
+- Lead Scout for outbound agencies
+
+What was added to support this
+- config/offers.yaml
+  Offer definitions.
+- scripts/run_offer_pipeline.py
+  One-command runner for a chosen offer.
+- scripts/export_offer_feed.py
+  Builds a sellable JSON/Markdown feed.
+- src/offer_profiles.py
+  Loads offer profiles cleanly.
+
+Useful commands
+- Run first product:
+  python scripts/run_offer_pipeline.py --offer qa_gig_hunter
+
+- Export only:
+  python scripts/run_offer_pipeline.py --offer qa_gig_hunter --export-only
+
+- Include optional login/session scanners:
+  python scripts/run_offer_pipeline.py --offer qa_gig_hunter --with-optional
+
+What to google next
+- Telegram Stars bot subscriptions
+- Poe creator monetization
+- Nevermined agent monetization
+- Telegram paid channel / paid bot examples
+- Poe bot distribution
+- usage-based AI agent marketplaces
+
+Practical decision
+- Build and test around Telegram first.
+- Use Poe as the second publication channel.
+- Keep Nevermined as phase 2 after first demand signal.

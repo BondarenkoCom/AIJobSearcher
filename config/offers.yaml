@@ -1,0 +1,1132 @@
+_shared:
+  bot_common: &bot_common
+    display_name: "Remote Work Hunter"
+    recommended_username: "RemoteWorkHunterBot"
+    username_ideas:
+      - "RemoteWorkHunterBot"
+      - "RemoteRoleHunterBot"
+      - "JobAndGigHunterBot"
+    short_description: "ATS fights dirty. Hunt better remote jobs, gigs, and contract leads."
+    about: "Recruiters use ATS filters, keyword gates, and noisy job boards to bury strong candidates. Remote Work Hunter is the countermeasure: it scans remote jobs, gigs, and contract leads, cuts the noise, and delivers sharper opportunities across selected professions."
+    preview_limit: 3
+    full_limit: 12
+    commands: &default_commands
+      - cmd: "start"
+        description: "Open preview and menu"
+      - cmd: "choose"
+        description: "Choose profession pack"
+      - cmd: "today"
+        description: "Get today's shortlist"
+      - cmd: "plans"
+        description: "See paid plans"
+      - cmd: "status"
+        description: "Check access status"
+      - cmd: "terms"
+        description: "Terms and refund info"
+      - cmd: "support"
+        description: "Payment and bot support"
+  plans_standard: &plans_standard
+    - code: "week"
+      title: "7-day pass"
+      description: "Filtered remote leads for 7 days."
+      stars: 39
+      days: 7
+    - code: "month"
+      title: "30-day pass"
+      description: "Filtered remote leads for 30 days."
+      stars: 119
+      days: 30
+  plans_light: &plans_light
+    - code: "week"
+      title: "7-day pass"
+      description: "Filtered remote leads for 7 days."
+      stars: 29
+      days: 7
+
+offers:
+  qa_gig_hunter:
+    title: "QA Work Hunter"
+    summary: "Daily shortlist of remote QA, test automation, and adjacent paid gigs or jobs."
+    product_hint: "Best first profession pack. Uses both QA-specific gig scanners and generic public job sources."
+    bot:
+      <<: *bot_common
+      plans: *plans_standard
+    scanners:
+      - name: "job_board_public"
+        optional: false
+        command: "{python} scripts/web_scan_contract_jobs.py --config {runtime_config} --limit 120 --min-score 2"
+      - name: "hn_remote"
+        optional: false
+        command: "{python} scripts/hn_scan_whoishiring.py --config {runtime_config} --limit 60 --min-score 2"
+      - name: "workana"
+        optional: false
+        command: "{python} scripts/workana_scan_projects.py --config {runtime_config} --write-db --db {db} --out-dir {out_dir} --pages 3 --limit 80 --min-score 7 --require-remote"
+      - name: "freelancermap"
+        optional: false
+        command: "{python} scripts/freelancermap_scan_projects.py --config {runtime_config} --write-db --db {db} --out-dir {out_dir} --limit 80 --min-score 8 --require-remote"
+      - name: "reddit"
+        optional: false
+        command: "{python} scripts/reddit_scan_gigs.py --config {runtime_config} --write-db --db {db} --max-results 80 --min-score 3 --require-pay-signal --require-contact-signal"
+      - name: "upwork"
+        optional: true
+        command: "{python} scripts/upwork_scan_jobs.py --config {runtime_config} --write-db --db {db} --out-dir {out_dir} --max-jobs 80 --min-score 7"
+      - name: "telegram"
+        optional: true
+        command: "{python} scripts/telegram_scan_gigs.py --config {runtime_config} --write-db --db {db} --days 14 --max-results 120"
+      - name: "linkedin_jobs"
+        optional: true
+        command: "{python} scripts/linkedin_scan_jobs.py --config {runtime_config} --db {db} --query \"QA engineer OR SDET OR test automation\" --location \"Worldwide\" --limit 50 --remote-only --scrolls 10"
+      - name: "linkedin_posts"
+        optional: true
+        command: "{python} scripts/linkedin_scan_posts.py --config {runtime_config} --write-db --query \"hiring QA OR SDET remote\" --limit 40 --scrolls 10 --out-dir {out_dir}"
+    export:
+      default_limit: 12
+      allowed_platforms:
+        - "workana.com"
+        - "freelancermap.com"
+        - "reddit"
+        - "telegram"
+        - "upwork"
+        - "linkedin"
+        - "hn"
+        - "job_board"
+      allowed_lead_types:
+        - "project"
+        - "post"
+        - "job"
+        - "gig"
+      title_keyword_any:
+        - "qa"
+        - "quality assurance"
+        - "test"
+        - "testing"
+        - "playwright"
+        - "selenium"
+        - "automation"
+        - "sdet"
+      title_exclude_keywords:
+        - "cto"
+        - "chief technology officer"
+        - "marketing"
+        - "warehouse"
+      keyword_any:
+        - "qa"
+        - "quality assurance"
+        - "test automation"
+        - "playwright"
+        - "selenium"
+        - "api testing"
+        - "sdet"
+        - "bug fix"
+        - "automation"
+      exclude_keywords:
+        - "onsite"
+        - "relocate"
+        - "restaurant"
+        - "salon"
+      prefer_contact:
+        - "email"
+        - "telegram_dm"
+        - "platform_apply"
+    config_overrides:
+      profile:
+        title: "QA Engineer / SDET / Test Automation"
+        keywords:
+          include:
+            - "qa"
+            - "qa engineer"
+            - "quality assurance"
+            - "sdet"
+            - "test engineer"
+            - "software tester"
+            - "test automation"
+            - "automation testing"
+            - "playwright"
+            - "selenium"
+            - "api testing"
+            - "postman"
+            - "cypress"
+          exclude:
+            - "director"
+            - "vp"
+            - "head of qa"
+            - "manager"
+            - "intern"
+            - "internship"
+            - "student"
+            - "marketing"
+            - "growth hacker"
+            - "data analyst"
+        locations:
+          - "Remote"
+          - "Worldwide"
+          - "Global"
+          - "Work from anywhere"
+      filters:
+        min_score: 2
+        max_results: 250
+      sources:
+        manual_csv:
+          enabled: false
+        http_json:
+          - name: "remotive_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://remotive.com/api/remote-jobs"
+            params:
+              search: "qa automation"
+            headers: {}
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "candidate_required_location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remotive_api"
+          - name: "arbeitnow_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://www.arbeitnow.com/api/job-board-api"
+            params:
+              search: "qa"
+              remote: "true"
+            headers: {}
+            json: {}
+            list_path: "data"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "arbeitnow_api"
+          - name: "remoteok_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://remoteok.com/api"
+            params:
+              tags: "qa"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: ""
+            mapping:
+              title: "position"
+              company: "company"
+              location: "location"
+              url: "apply_url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remoteok_api"
+          - name: "jobicy_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://jobicy.com/api/v2/remote-jobs"
+            params:
+              count: 50
+              tag: "qa"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "jobTitle"
+              company: "companyName"
+              location: "jobGeo"
+              url: "url"
+              description: "jobDescription"
+              contact_email: ""
+            static:
+              source: "jobicy_api"
+
+  software_engineering_hunter:
+    title: "Software Engineering Hunter"
+    summary: "Remote software engineering roles across public job APIs, HN, and optional LinkedIn search."
+    product_hint: "Broadest non-QA pack. Good for Python, C#, backend, frontend, and full-stack remote roles."
+    bot:
+      <<: *bot_common
+      plans: *plans_standard
+    scanners:
+      - name: "job_board_public"
+        optional: false
+        command: "{python} scripts/web_scan_contract_jobs.py --config {runtime_config} --limit 140 --min-score 2"
+      - name: "hn_remote"
+        optional: false
+        command: "{python} scripts/hn_scan_whoishiring.py --config {runtime_config} --limit 80 --min-score 2"
+      - name: "linkedin_jobs"
+        optional: true
+        command: "{python} scripts/linkedin_scan_jobs.py --config {runtime_config} --db {db} --query \"software engineer OR backend OR frontend OR full stack\" --location \"Worldwide\" --limit 60 --remote-only --scrolls 10"
+      - name: "linkedin_posts"
+        optional: true
+        command: "{python} scripts/linkedin_scan_posts.py --config {runtime_config} --write-db --query \"hiring software engineer remote\" --limit 40 --scrolls 10 --out-dir {out_dir}"
+    export:
+      default_limit: 12
+      allowed_platforms:
+        - "job_board"
+        - "linkedin"
+        - "hn"
+      allowed_lead_types:
+        - "job"
+        - "post"
+      title_keyword_any:
+        - "software engineer"
+        - "software developer"
+        - "backend"
+        - "frontend"
+        - "full stack"
+        - "full-stack"
+        - "fullstack"
+        - "python"
+        - "c#"
+        - ".net"
+        - "react"
+        - "node"
+        - "golang"
+      title_exclude_keywords:
+        - "manager"
+        - "director"
+        - "sales"
+        - "support"
+      keyword_any:
+        - "software engineer"
+        - "software developer"
+        - "backend"
+        - "frontend"
+        - "full stack"
+        - "python"
+        - "c#"
+        - ".net"
+        - "javascript"
+        - "typescript"
+        - "react"
+        - "node"
+        - "golang"
+        - "api"
+      exclude_keywords:
+        - "onsite"
+        - "relocate"
+        - "commission"
+        - "call center"
+      prefer_contact:
+        - "email"
+        - "platform_apply"
+    config_overrides:
+      profile:
+        title: "Software Engineer / Developer"
+        keywords:
+          include:
+            - "software engineer"
+            - "software developer"
+            - "backend engineer"
+            - "backend developer"
+            - "frontend engineer"
+            - "frontend developer"
+            - "full stack"
+            - "full-stack"
+            - "fullstack"
+            - "python"
+            - "c#"
+            - ".net"
+            - "javascript"
+            - "typescript"
+            - "react"
+            - "node"
+            - "golang"
+            - "api"
+          exclude:
+            - "manager"
+            - "director"
+            - "intern"
+            - "internship"
+            - "recruiter"
+            - "sales"
+            - "support"
+            - "designer"
+        locations:
+          - "Remote"
+          - "Worldwide"
+          - "Global"
+          - "Work from anywhere"
+      filters:
+        min_score: 2
+        max_results: 250
+      sources:
+        manual_csv:
+          enabled: false
+        http_json:
+          - name: "remotive_remote_software"
+            enabled: true
+            method: "GET"
+            url: "https://remotive.com/api/remote-jobs"
+            params:
+              search: "software engineer"
+            headers: {}
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "candidate_required_location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remotive_api"
+          - name: "arbeitnow_remote_software"
+            enabled: true
+            method: "GET"
+            url: "https://www.arbeitnow.com/api/job-board-api"
+            params:
+              search: "software engineer"
+              remote: "true"
+            headers: {}
+            json: {}
+            list_path: "data"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "arbeitnow_api"
+          - name: "remoteok_remote_dev"
+            enabled: true
+            method: "GET"
+            url: "https://remoteok.com/api"
+            params:
+              tags: "dev"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: ""
+            mapping:
+              title: "position"
+              company: "company"
+              location: "location"
+              url: "apply_url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remoteok_api"
+          - name: "jobicy_remote_software"
+            enabled: true
+            method: "GET"
+            url: "https://jobicy.com/api/v2/remote-jobs"
+            params:
+              count: 50
+              tag: "software-development"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "jobTitle"
+              company: "companyName"
+              location: "jobGeo"
+              url: "url"
+              description: "jobDescription"
+              contact_email: ""
+            static:
+              source: "jobicy_api"
+
+  data_ai_hunter:
+    title: "Data and AI Hunter"
+    summary: "Remote data engineering, analytics, ML, and AI roles from public job boards and optional LinkedIn search."
+    product_hint: "Strong second pack after software engineering. It maps well to current public job APIs."
+    bot:
+      <<: *bot_common
+      plans: *plans_standard
+    scanners:
+      - name: "job_board_public"
+        optional: false
+        command: "{python} scripts/web_scan_contract_jobs.py --config {runtime_config} --limit 140 --min-score 2"
+      - name: "hn_remote"
+        optional: false
+        command: "{python} scripts/hn_scan_whoishiring.py --config {runtime_config} --limit 80 --min-score 2"
+      - name: "linkedin_jobs"
+        optional: true
+        command: "{python} scripts/linkedin_scan_jobs.py --config {runtime_config} --db {db} --query \"data engineer OR data scientist OR machine learning engineer OR AI engineer\" --location \"Worldwide\" --limit 60 --remote-only --scrolls 10"
+      - name: "linkedin_posts"
+        optional: true
+        command: "{python} scripts/linkedin_scan_posts.py --config {runtime_config} --write-db --query \"hiring data engineer OR machine learning engineer remote\" --limit 40 --scrolls 10 --out-dir {out_dir}"
+    export:
+      default_limit: 12
+      allowed_platforms:
+        - "job_board"
+        - "linkedin"
+        - "hn"
+      allowed_lead_types:
+        - "job"
+        - "post"
+      title_keyword_any:
+        - "data engineer"
+        - "data scientist"
+        - "machine learning"
+        - "ml engineer"
+        - "ai engineer"
+        - "analytics engineer"
+        - "data analyst"
+      title_exclude_keywords:
+        - "sales"
+        - "marketing"
+        - "manager"
+        - "director"
+      keyword_any:
+        - "data engineer"
+        - "data scientist"
+        - "machine learning"
+        - "ml engineer"
+        - "ai engineer"
+        - "analytics engineer"
+        - "data analyst"
+        - "python"
+        - "sql"
+        - "llm"
+        - "nlp"
+        - "pyspark"
+      exclude_keywords:
+        - "onsite"
+        - "relocate"
+        - "sales"
+        - "growth"
+      prefer_contact:
+        - "email"
+        - "platform_apply"
+    config_overrides:
+      profile:
+        title: "Data / Analytics / AI"
+        keywords:
+          include:
+            - "data engineer"
+            - "data scientist"
+            - "data analyst"
+            - "analytics engineer"
+            - "machine learning engineer"
+            - "ml engineer"
+            - "ai engineer"
+            - "llm engineer"
+            - "nlp engineer"
+            - "python"
+            - "sql"
+            - "pyspark"
+            - "airflow"
+            - "dbt"
+          exclude:
+            - "manager"
+            - "director"
+            - "intern"
+            - "internship"
+            - "sales"
+            - "marketing"
+            - "account executive"
+        locations:
+          - "Remote"
+          - "Worldwide"
+          - "Global"
+          - "Work from anywhere"
+      filters:
+        min_score: 2
+        max_results: 250
+      sources:
+        manual_csv:
+          enabled: false
+        http_json:
+          - name: "remotive_remote_data_ai"
+            enabled: true
+            method: "GET"
+            url: "https://remotive.com/api/remote-jobs"
+            params:
+              search: "data engineer"
+            headers: {}
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "candidate_required_location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remotive_api"
+          - name: "arbeitnow_remote_data_ai"
+            enabled: true
+            method: "GET"
+            url: "https://www.arbeitnow.com/api/job-board-api"
+            params:
+              search: "data engineer"
+              remote: "true"
+            headers: {}
+            json: {}
+            list_path: "data"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "arbeitnow_api"
+          - name: "remoteok_remote_data"
+            enabled: true
+            method: "GET"
+            url: "https://remoteok.com/api"
+            params:
+              tags: "data"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: ""
+            mapping:
+              title: "position"
+              company: "company"
+              location: "location"
+              url: "apply_url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remoteok_api"
+          - name: "jobicy_remote_data_ai"
+            enabled: true
+            method: "GET"
+            url: "https://jobicy.com/api/v2/remote-jobs"
+            params:
+              count: 50
+              tag: "data-science"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "jobTitle"
+              company: "companyName"
+              location: "jobGeo"
+              url: "url"
+              description: "jobDescription"
+              contact_email: ""
+            static:
+              source: "jobicy_api"
+
+  cybersecurity_hunter:
+    title: "Cybersecurity Hunter"
+    summary: "Remote security engineering and analyst roles from public job feeds, HN, and optional LinkedIn search."
+    product_hint: "Smaller market than software, but high-value and clear enough for a dedicated profession pack."
+    bot:
+      <<: *bot_common
+      plans: *plans_standard
+    scanners:
+      - name: "job_board_public"
+        optional: false
+        command: "{python} scripts/web_scan_contract_jobs.py --config {runtime_config} --limit 120 --min-score 2"
+      - name: "hn_remote"
+        optional: false
+        command: "{python} scripts/hn_scan_whoishiring.py --config {runtime_config} --limit 70 --min-score 2"
+      - name: "linkedin_jobs"
+        optional: true
+        command: "{python} scripts/linkedin_scan_jobs.py --config {runtime_config} --db {db} --query \"security engineer OR application security OR security analyst OR appsec\" --location \"Worldwide\" --limit 50 --remote-only --scrolls 10"
+      - name: "linkedin_posts"
+        optional: true
+        command: "{python} scripts/linkedin_scan_posts.py --config {runtime_config} --write-db --query \"hiring security engineer remote\" --limit 30 --scrolls 10 --out-dir {out_dir}"
+    export:
+      default_limit: 10
+      allowed_platforms:
+        - "job_board"
+        - "linkedin"
+        - "hn"
+      allowed_lead_types:
+        - "job"
+        - "post"
+      title_keyword_any:
+        - "security engineer"
+        - "application security"
+        - "appsec"
+        - "cybersecurity"
+        - "information security"
+        - "security analyst"
+        - "soc analyst"
+        - "pentester"
+      title_exclude_keywords:
+        - "manager"
+        - "director"
+        - "sales"
+      keyword_any:
+        - "security engineer"
+        - "application security"
+        - "appsec"
+        - "cybersecurity"
+        - "information security"
+        - "security analyst"
+        - "soc"
+        - "incident response"
+        - "vulnerability"
+        - "pentest"
+      exclude_keywords:
+        - "onsite"
+        - "relocate"
+        - "sales"
+        - "insurance agent"
+      prefer_contact:
+        - "email"
+        - "platform_apply"
+    config_overrides:
+      profile:
+        title: "Cybersecurity / AppSec / Security Analyst"
+        keywords:
+          include:
+            - "security engineer"
+            - "application security"
+            - "appsec"
+            - "cybersecurity"
+            - "information security"
+            - "security analyst"
+            - "soc analyst"
+            - "incident response"
+            - "detection engineer"
+            - "threat detection"
+            - "pentest"
+            - "vulnerability"
+          exclude:
+            - "manager"
+            - "director"
+            - "intern"
+            - "internship"
+            - "sales"
+            - "account executive"
+            - "support"
+        locations:
+          - "Remote"
+          - "Worldwide"
+          - "Global"
+          - "Work from anywhere"
+      filters:
+        min_score: 2
+        max_results: 220
+      sources:
+        manual_csv:
+          enabled: false
+        http_json:
+          - name: "remotive_remote_security"
+            enabled: true
+            method: "GET"
+            url: "https://remotive.com/api/remote-jobs"
+            params:
+              search: "security engineer"
+            headers: {}
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "candidate_required_location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remotive_api"
+          - name: "arbeitnow_remote_security"
+            enabled: true
+            method: "GET"
+            url: "https://www.arbeitnow.com/api/job-board-api"
+            params:
+              search: "security engineer"
+              remote: "true"
+            headers: {}
+            json: {}
+            list_path: "data"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "arbeitnow_api"
+          - name: "remoteok_remote_security"
+            enabled: true
+            method: "GET"
+            url: "https://remoteok.com/api"
+            params:
+              tags: "security"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: ""
+            mapping:
+              title: "position"
+              company: "company"
+              location: "location"
+              url: "apply_url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remoteok_api"
+          - name: "jobicy_remote_security"
+            enabled: true
+            method: "GET"
+            url: "https://jobicy.com/api/v2/remote-jobs"
+            params:
+              count: 50
+              tag: "cybersecurity"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "jobTitle"
+              company: "companyName"
+              location: "jobGeo"
+              url: "url"
+              description: "jobDescription"
+              contact_email: ""
+            static:
+              source: "jobicy_api"
+
+  devops_cloud_hunter:
+    title: "DevOps and Cloud Hunter"
+    summary: "Remote DevOps, SRE, platform, and cloud engineering roles from public feeds, HN, and optional LinkedIn search."
+    product_hint: "Good profession pack for platform-heavy remote work. Needs fewer QA-specific custom scanners."
+    bot:
+      <<: *bot_common
+      plans: *plans_standard
+    scanners:
+      - name: "job_board_public"
+        optional: false
+        command: "{python} scripts/web_scan_contract_jobs.py --config {runtime_config} --limit 140 --min-score 2"
+      - name: "hn_remote"
+        optional: false
+        command: "{python} scripts/hn_scan_whoishiring.py --config {runtime_config} --limit 80 --min-score 2"
+      - name: "linkedin_jobs"
+        optional: true
+        command: "{python} scripts/linkedin_scan_jobs.py --config {runtime_config} --db {db} --query \"devops OR site reliability engineer OR platform engineer OR cloud engineer\" --location \"Worldwide\" --limit 60 --remote-only --scrolls 10"
+      - name: "linkedin_posts"
+        optional: true
+        command: "{python} scripts/linkedin_scan_posts.py --config {runtime_config} --write-db --query \"hiring devops engineer remote\" --limit 30 --scrolls 10 --out-dir {out_dir}"
+    export:
+      default_limit: 12
+      allowed_platforms:
+        - "job_board"
+        - "linkedin"
+        - "hn"
+      allowed_lead_types:
+        - "job"
+        - "post"
+      title_keyword_any:
+        - "devops"
+        - "site reliability"
+        - "sre"
+        - "platform engineer"
+        - "cloud engineer"
+        - "infrastructure engineer"
+        - "release engineer"
+      title_exclude_keywords:
+        - "manager"
+        - "director"
+        - "sales"
+      keyword_any:
+        - "devops"
+        - "site reliability"
+        - "sre"
+        - "platform engineer"
+        - "cloud engineer"
+        - "infrastructure engineer"
+        - "kubernetes"
+        - "terraform"
+        - "aws"
+        - "gcp"
+        - "azure"
+        - "ci/cd"
+      exclude_keywords:
+        - "onsite"
+        - "relocate"
+        - "sales"
+        - "warehouse"
+      prefer_contact:
+        - "email"
+        - "platform_apply"
+    config_overrides:
+      profile:
+        title: "DevOps / SRE / Cloud"
+        keywords:
+          include:
+            - "devops"
+            - "site reliability"
+            - "sre"
+            - "platform engineer"
+            - "cloud engineer"
+            - "infrastructure engineer"
+            - "release engineer"
+            - "kubernetes"
+            - "terraform"
+            - "aws"
+            - "gcp"
+            - "azure"
+            - "ci/cd"
+          exclude:
+            - "manager"
+            - "director"
+            - "intern"
+            - "internship"
+            - "sales"
+            - "support"
+        locations:
+          - "Remote"
+          - "Worldwide"
+          - "Global"
+          - "Work from anywhere"
+      filters:
+        min_score: 2
+        max_results: 250
+      sources:
+        manual_csv:
+          enabled: false
+        http_json:
+          - name: "remotive_remote_devops"
+            enabled: true
+            method: "GET"
+            url: "https://remotive.com/api/remote-jobs"
+            params:
+              search: "devops engineer"
+            headers: {}
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "candidate_required_location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remotive_api"
+          - name: "arbeitnow_remote_devops"
+            enabled: true
+            method: "GET"
+            url: "https://www.arbeitnow.com/api/job-board-api"
+            params:
+              search: "devops engineer"
+              remote: "true"
+            headers: {}
+            json: {}
+            list_path: "data"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "arbeitnow_api"
+          - name: "remoteok_remote_devops"
+            enabled: true
+            method: "GET"
+            url: "https://remoteok.com/api"
+            params:
+              tags: "devops"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: ""
+            mapping:
+              title: "position"
+              company: "company"
+              location: "location"
+              url: "apply_url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remoteok_api"
+          - name: "jobicy_remote_devops"
+            enabled: true
+            method: "GET"
+            url: "https://jobicy.com/api/v2/remote-jobs"
+            params:
+              count: 50
+              tag: "devops-sysadmin"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "jobTitle"
+              company: "companyName"
+              location: "jobGeo"
+              url: "url"
+              description: "jobDescription"
+              contact_email: ""
+            static:
+              source: "jobicy_api"
+
+  remote_job_hunter:
+    title: "Remote QA Job Hunter"
+    summary: "Remote QA jobs for longer-term search using public job boards and optional LinkedIn scans."
+    product_hint: "Lighter QA-only job feed if you want a simpler separate paid offer."
+    bot:
+      <<: *bot_common
+      selectable: false
+      short_description: "Filtered remote QA jobs for longer-term search."
+      about: "A narrower QA-only feed focused on longer-term remote roles rather than gig-heavy sourcing."
+      full_limit: 15
+      plans: *plans_light
+    scanners:
+      - name: "job_board_public"
+        optional: false
+        command: "{python} scripts/web_scan_contract_jobs.py --config {runtime_config} --limit 120 --min-score 2"
+      - name: "hn_remote"
+        optional: false
+        command: "{python} scripts/hn_scan_whoishiring.py --config {runtime_config} --limit 50 --min-score 2"
+      - name: "linkedin_jobs"
+        optional: true
+        command: "{python} scripts/linkedin_scan_jobs.py --config {runtime_config} --db {db} --query \"QA engineer OR SDET\" --location \"Worldwide\" --limit 50 --remote-only --scrolls 10"
+    export:
+      default_limit: 15
+      allowed_platforms:
+        - "job_board"
+        - "linkedin"
+        - "hn"
+      allowed_lead_types:
+        - "job"
+        - "post"
+      keyword_any:
+        - "qa"
+        - "quality assurance"
+        - "tester"
+        - "test engineer"
+        - "automation"
+        - "sdet"
+      exclude_keywords:
+        - "onsite"
+        - "relocate"
+      prefer_contact:
+        - "platform_apply"
+    config_overrides:
+      profile:
+        title: "Remote QA Engineer"
+        keywords:
+          include:
+            - "qa"
+            - "qa engineer"
+            - "quality assurance"
+            - "sdet"
+            - "test engineer"
+            - "software tester"
+            - "automation"
+            - "playwright"
+            - "selenium"
+          exclude:
+            - "director"
+            - "vp"
+            - "head of qa"
+            - "manager"
+            - "intern"
+            - "internship"
+        locations:
+          - "Remote"
+          - "Worldwide"
+          - "Global"
+      filters:
+        min_score: 2
+        max_results: 200
+      sources:
+        manual_csv:
+          enabled: false
+        http_json:
+          - name: "remotive_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://remotive.com/api/remote-jobs"
+            params:
+              search: "qa"
+            headers: {}
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "candidate_required_location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remotive_api"
+          - name: "arbeitnow_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://www.arbeitnow.com/api/job-board-api"
+            params:
+              search: "qa"
+              remote: "true"
+            headers: {}
+            json: {}
+            list_path: "data"
+            mapping:
+              title: "title"
+              company: "company_name"
+              location: "location"
+              url: "url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "arbeitnow_api"
+          - name: "remoteok_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://remoteok.com/api"
+            params:
+              tags: "qa"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: ""
+            mapping:
+              title: "position"
+              company: "company"
+              location: "location"
+              url: "apply_url"
+              description: "description"
+              contact_email: ""
+            static:
+              source: "remoteok_api"
+          - name: "jobicy_remote_qa"
+            enabled: true
+            method: "GET"
+            url: "https://jobicy.com/api/v2/remote-jobs"
+            params:
+              count: 50
+              tag: "qa"
+            headers:
+              User-Agent: "Mozilla/5.0"
+              Accept: "application/json"
+            json: {}
+            list_path: "jobs"
+            mapping:
+              title: "jobTitle"
+              company: "companyName"
+              location: "jobGeo"
+              url: "url"
+              description: "jobDescription"
+              contact_email: ""
+            static:
+              source: "jobicy_api"

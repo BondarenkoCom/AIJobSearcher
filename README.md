@@ -76,6 +76,32 @@ Example run:
 .\.venv\Scripts\python.exe scripts\upwork_scan_jobs.py --write-db --query "qa automation"
 ```
 
+Offer mode
+----------
+
+The repository now includes a thin product layer for monetizable lead feeds.
+
+- `config/offers.yaml` defines sellable offer profiles
+- `scripts/run_offer_pipeline.py` runs one offer end-to-end
+- `scripts/export_offer_feed.py` builds a JSON/Markdown feed for Telegram, Poe, or manual review
+
+Current profiles:
+
+- `qa_gig_hunter`: paid QA/automation gigs
+- `remote_job_hunter`: longer-term remote QA jobs
+
+Example:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_offer_pipeline.py --offer qa_gig_hunter
+```
+
+To include scanners that need extra sessions or dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_offer_pipeline.py --offer qa_gig_hunter --with-optional
+```
+
 Security
 --------
 

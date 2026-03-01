@@ -77,6 +77,74 @@ CREATE TABLE IF NOT EXISTS answer_bank (
 );
 
 CREATE INDEX IF NOT EXISTS idx_answer_bank_updated_at ON answer_bank(updated_at);
+
+CREATE TABLE IF NOT EXISTS bot_users (
+  user_id INTEGER PRIMARY KEY,
+  chat_id INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_users_chat_id ON bot_users(chat_id);
+CREATE INDEX IF NOT EXISTS idx_bot_users_username ON bot_users(username);
+
+CREATE TABLE IF NOT EXISTS bot_subscriptions (
+  subscription_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  offer_slug TEXT NOT NULL,
+  plan_code TEXT NOT NULL,
+  status TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  telegram_payment_charge_id TEXT NOT NULL,
+  is_recurring INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  raw_json TEXT,
+  FOREIGN KEY (user_id) REFERENCES bot_users(user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_subscriptions_user_offer ON bot_subscriptions(user_id, offer_slug);
+CREATE INDEX IF NOT EXISTS idx_bot_subscriptions_ends_at ON bot_subscriptions(ends_at);
+
+CREATE TABLE IF NOT EXISTS bot_payments (
+  telegram_payment_charge_id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  offer_slug TEXT NOT NULL,
+  plan_code TEXT NOT NULL,
+  invoice_payload TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  total_amount INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  paid_at TEXT NOT NULL,
+  is_recurring INTEGER NOT NULL DEFAULT 0,
+  raw_json TEXT,
+  FOREIGN KEY (user_id) REFERENCES bot_users(user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_payments_user_id ON bot_payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_bot_payments_paid_at ON bot_payments(paid_at);
+
+CREATE TABLE IF NOT EXISTS bot_delivery_log (
+  delivery_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  offer_slug TEXT NOT NULL,
+  delivery_kind TEXT NOT NULL,
+  item_count INTEGER NOT NULL DEFAULT 0,
+  message_id INTEGER,
+  created_at TEXT NOT NULL,
+  details_json TEXT,
+  FOREIGN KEY (user_id) REFERENCES bot_users(user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_delivery_user_offer ON bot_delivery_log(user_id, offer_slug);
+CREATE INDEX IF NOT EXISTS idx_bot_delivery_created_at ON bot_delivery_log(created_at);
 """
 
 
@@ -276,7 +344,7 @@ def add_to_blocklist(
 
 def count_rows(conn: sqlite3.Connection) -> Dict[str, int]:
     out: Dict[str, int] = {}
-    for table in ("leads", "events", "blocklist"):
+    for table in ("leads", "events", "blocklist", "bot_users", "bot_subscriptions", "bot_payments", "bot_delivery_log"):
         out[table] = int(conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"])
     return out
 
