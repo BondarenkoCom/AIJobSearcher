@@ -667,12 +667,13 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     chat = dict(message.get("chat") or {})
     user_id = int(user.get("id") or 0)
     chat_id = int(chat.get("id") or 0)
+    username = _safe(user.get("username"))
     upsert_bot_user(
         conn,
         BotUser(
             user_id=user_id,
             chat_id=chat_id,
-            username=_safe(user.get("username")),
+            username=username,
             first_name=_safe(user.get("first_name")),
             last_name=_safe(user.get("last_name")),
         ),
@@ -828,9 +829,17 @@ def main() -> int:
             break
         except TelegramApiError as e:
             print(f"[tg-paid-bot] telegram api error: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             time.sleep(max(3.0, settings.sleep_sec))
         except Exception as e:
             print(f"[tg-paid-bot] error: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             time.sleep(max(3.0, settings.sleep_sec))
 
     try:
