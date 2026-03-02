@@ -4,7 +4,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 def _now_iso() -> str:
@@ -52,6 +52,33 @@ def upsert_bot_user(conn: sqlite3.Connection, user: BotUser) -> None:
             now,
             now,
             now,
+        ),
+    )
+
+
+def log_bot_event(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    chat_id: int,
+    offer_slug: str,
+    event_type: str,
+    status: str = "ok",
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO bot_event_log (user_id, chat_id, offer_slug, event_type, status, created_at, details_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            int(chat_id),
+            _safe(offer_slug),
+            _safe(event_type),
+            _safe(status) or "ok",
+            _now_iso(),
+            json.dumps(details or {}, ensure_ascii=False, sort_keys=True),
         ),
     )
 
@@ -238,4 +265,107 @@ def get_user_summary(conn: sqlite3.Connection, *, user_id: int, offer_slug: str)
         "active_subscription": sub,
         "payments_count": int((payments or {"c": 0})["c"]),
         "deliveries_count": int((deliveries or {"c": 0})["c"]),
+    }
+
+
+def _count(conn: sqlite3.Connection, query: str, params: tuple = ()) -> int:
+    row = conn.execute(query, params).fetchone()
+    if row is None:
+        return 0
+    try:
+        return int(row["c"])
+    except Exception:
+        return int(row[0])
+
+
+def get_bot_analytics_summary(conn: sqlite3.Connection) -> Dict[str, Any]:
+    now = datetime.now()
+    since_1d = (now - timedelta(days=1)).isoformat(timespec="seconds")
+    since_7d = (now - timedelta(days=7)).isoformat(timespec="seconds")
+
+    def event_stats(event_type: str, *, status: str = "") -> Dict[str, int]:
+        where = ["event_type = ?"]
+        params: List[Any] = [event_type]
+        if _safe(status):
+            where.append("status = ?")
+            params.append(_safe(status))
+        where_sql = " AND ".join(where)
+        return {
+            "total": _count(conn, f"SELECT COUNT(*) AS c FROM bot_event_log WHERE {where_sql}", tuple(params)),
+            "unique_users": _count(conn, f"SELECT COUNT(DISTINCT user_id) AS c FROM bot_event_log WHERE {where_sql}", tuple(params)),
+        }
+
+    starts = event_stats("start")
+    plans_opened = event_stats("plans_opened")
+    buy_clicked = event_stats("buy_clicked")
+    invoices_sent = event_stats("invoice_sent")
+    pre_checkout_ok = event_stats("pre_checkout", status="ok")
+    pre_checkout_fail = event_stats("pre_checkout", status="fail")
+
+    previews_sent = _count(conn, "SELECT COUNT(*) AS c FROM bot_delivery_log WHERE delivery_kind = 'preview'")
+    full_sent = _count(conn, "SELECT COUNT(*) AS c FROM bot_delivery_log WHERE delivery_kind IN ('member_full', 'paid_full')")
+    total_payments = _count(conn, "SELECT COUNT(*) AS c FROM bot_payments WHERE status = 'paid'")
+    unique_payers = _count(conn, "SELECT COUNT(DISTINCT user_id) AS c FROM bot_payments WHERE status = 'paid'")
+    stars_revenue = _count(conn, "SELECT COALESCE(SUM(total_amount), 0) AS c FROM bot_payments WHERE status = 'paid'")
+    active_subscriptions = _count(
+        conn,
+        """
+        SELECT COUNT(*) AS c
+        FROM bot_subscriptions
+        WHERE status = 'active' AND datetime(ends_at) > datetime(?)
+        """,
+        (now.isoformat(timespec="seconds"),),
+    )
+    unique_users_by_pack = conn.execute(
+        """
+        SELECT offer_slug, COUNT(DISTINCT user_id) AS unique_users, COUNT(*) AS visits
+        FROM bot_event_log
+        WHERE event_type = 'start' AND offer_slug != ''
+        GROUP BY offer_slug
+        ORDER BY unique_users DESC, visits DESC
+        LIMIT 5
+        """
+    ).fetchall()
+    payments_by_pack = conn.execute(
+        """
+        SELECT offer_slug, COUNT(*) AS payments, COUNT(DISTINCT user_id) AS unique_payers, COALESCE(SUM(total_amount), 0) AS stars
+        FROM bot_payments
+        WHERE status = 'paid' AND offer_slug != ''
+        GROUP BY offer_slug
+        ORDER BY stars DESC, payments DESC
+        LIMIT 5
+        """
+    ).fetchall()
+
+    return {
+        "users_total": _count(conn, "SELECT COUNT(*) AS c FROM bot_users"),
+        "active_users_24h": _count(conn, "SELECT COUNT(DISTINCT user_id) AS c FROM bot_event_log WHERE datetime(created_at) >= datetime(?)", (since_1d,)),
+        "active_users_7d": _count(conn, "SELECT COUNT(DISTINCT user_id) AS c FROM bot_event_log WHERE datetime(created_at) >= datetime(?)", (since_7d,)),
+        "starts": starts,
+        "returning_users": _count(
+            conn,
+            """
+            SELECT COUNT(*) AS c
+            FROM (
+              SELECT user_id
+              FROM bot_event_log
+              WHERE event_type = 'start'
+              GROUP BY user_id
+              HAVING COUNT(*) > 1
+            )
+            """,
+        ),
+        "plans_opened": plans_opened,
+        "buy_clicked": buy_clicked,
+        "invoices_sent": invoices_sent,
+        "pre_checkout_ok": pre_checkout_ok,
+        "pre_checkout_fail": pre_checkout_fail,
+        "payments_total": total_payments,
+        "unique_payers": unique_payers,
+        "stars_revenue": stars_revenue,
+        "active_subscriptions": active_subscriptions,
+        "preview_deliveries": previews_sent,
+        "full_deliveries": full_sent,
+        "top_packs_by_users": [dict(row) for row in unique_users_by_pack],
+        "top_packs_by_payments": [dict(row) for row in payments_by_pack],
     }

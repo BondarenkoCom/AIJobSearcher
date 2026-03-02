@@ -20,9 +20,11 @@ from src.telegram_bot_api import TelegramApiError, TelegramBotApi  # noqa: E402
 from src.telegram_paid_store import (  # noqa: E402
     BotUser,
     add_payment_and_grant_access,
+    get_bot_analytics_summary,
     get_active_subscription,
     get_user_selected_offer,
     get_user_summary,
+    log_bot_event,
     log_delivery,
     set_user_selected_offer,
     upsert_bot_user,
@@ -273,6 +275,81 @@ def _has_offer_access(settings: BotSettings, conn, *, user_id: int, username: st
     return get_active_subscription(conn, user_id=user_id, offer_slug=offer_slug) is not None
 
 
+def _is_admin(settings: BotSettings, *, user_id: int, chat_id: int, username: str) -> bool:
+    admin_id = int(settings.admin_chat_id or 0)
+    if admin_id and (int(user_id or 0) == admin_id or int(chat_id or 0) == admin_id):
+        return True
+    return _is_free_user(settings, user_id=user_id, username=username)
+
+
+def _track_event(
+    conn,
+    *,
+    user_id: int,
+    chat_id: int,
+    offer_slug: str,
+    event_type: str,
+    status: str = "ok",
+    details: Dict[str, Any] | None = None,
+) -> None:
+    log_bot_event(
+        conn,
+        user_id=user_id,
+        chat_id=chat_id,
+        offer_slug=offer_slug,
+        event_type=event_type,
+        status=status,
+        details=details,
+    )
+
+
+def _format_admin_stats(settings: BotSettings, summary: Dict[str, Any]) -> str:
+    lines = [
+        f"{settings.bot_name} admin stats",
+        "",
+        "Users",
+        f"- Unique users total: {int(summary.get('users_total') or 0)}",
+        f"- Active users 24h: {int(summary.get('active_users_24h') or 0)}",
+        f"- Active users 7d: {int(summary.get('active_users_7d') or 0)}",
+        f"- Returning users: {int(summary.get('returning_users') or 0)}",
+        "",
+        "Funnel",
+        f"- Starts: {int((summary.get('starts') or {}).get('total') or 0)} total / {int((summary.get('starts') or {}).get('unique_users') or 0)} unique",
+        f"- Plans opened: {int((summary.get('plans_opened') or {}).get('total') or 0)} / {int((summary.get('plans_opened') or {}).get('unique_users') or 0)} unique",
+        f"- Buy clicks: {int((summary.get('buy_clicked') or {}).get('total') or 0)} / {int((summary.get('buy_clicked') or {}).get('unique_users') or 0)} unique",
+        f"- Invoices sent: {int((summary.get('invoices_sent') or {}).get('total') or 0)} / {int((summary.get('invoices_sent') or {}).get('unique_users') or 0)} unique",
+        f"- Pre-checkout ok: {int((summary.get('pre_checkout_ok') or {}).get('total') or 0)}",
+        f"- Pre-checkout failed: {int((summary.get('pre_checkout_fail') or {}).get('total') or 0)}",
+        f"- Successful payments: {int(summary.get('payments_total') or 0)} / {int(summary.get('unique_payers') or 0)} unique payers",
+        f"- Stars revenue: {int(summary.get('stars_revenue') or 0)} XTR",
+        f"- Active subscriptions: {int(summary.get('active_subscriptions') or 0)}",
+        "",
+        "Delivery",
+        f"- Preview deliveries: {int(summary.get('preview_deliveries') or 0)}",
+        f"- Full shortlist deliveries: {int(summary.get('full_deliveries') or 0)}",
+    ]
+
+    top_users = list(summary.get("top_packs_by_users") or [])
+    if top_users:
+        lines.extend(["", "Top packs by unique users"])
+        for row in top_users[:5]:
+            slug = _safe(row.get("offer_slug"))
+            offer = settings.offers.get(slug)
+            title = _offer_title(offer) if offer is not None else slug or "-"
+            lines.append(f"- {title}: {int(row.get('unique_users') or 0)} unique / {int(row.get('visits') or 0)} starts")
+
+    top_payments = list(summary.get("top_packs_by_payments") or [])
+    if top_payments:
+        lines.extend(["", "Top packs by payments"])
+        for row in top_payments[:5]:
+            slug = _safe(row.get("offer_slug"))
+            offer = settings.offers.get(slug)
+            title = _offer_title(offer) if offer is not None else slug or "-"
+            lines.append(f"- {title}: {int(row.get('payments') or 0)} payments / {int(row.get('stars') or 0)} XTR")
+
+    return "\n".join(lines)
+
+
 def _chunk_text(rows: List[Dict[str, Any]], *, chunk_size: int) -> List[str]:
     out: List[str] = []
     size = max(1, int(chunk_size))
@@ -468,9 +545,11 @@ def _send_status(
 
 def _send_plan_invoice(
     api: TelegramBotApi,
+    conn,
     settings: BotSettings,
     *,
     offer: OfferProfile,
+    user_id: int,
     chat_id: int,
     plan: Dict[str, Any],
 ) -> None:
@@ -487,6 +566,15 @@ def _send_plan_invoice(
         label=_safe(plan.get("title")) or code,
         start_parameter=f"{offer.slug}-{code}",
         photo_url=settings.photo_url,
+    )
+    _track_event(
+        conn,
+        user_id=user_id,
+        chat_id=chat_id,
+        offer_slug=offer.slug,
+        event_type="invoice_sent",
+        status="ok",
+        details={"plan_code": code, "days": days, "stars": stars},
     )
 
 
@@ -523,6 +611,19 @@ def _handle_successful_payment(api: TelegramBotApi, conn, settings: BotSettings,
         is_recurring=False,
         raw_payment=payment,
     )
+    _track_event(
+        conn,
+        user_id=user_id,
+        chat_id=chat_id,
+        offer_slug=offer.slug,
+        event_type="payment_success",
+        status="ok",
+        details={
+            "plan_code": _safe(payload.get("plan")) or "unknown",
+            "days": max(1, int(payload.get("days") or 1)),
+            "total_amount": int(payment.get("total_amount") or 0),
+        },
+    )
     conn.commit()
     api.send_message(
         chat_id=chat_id,
@@ -547,17 +648,29 @@ def _handle_successful_payment(api: TelegramBotApi, conn, settings: BotSettings,
     conn.commit()
 
 
-def _handle_pre_checkout(api: TelegramBotApi, settings: BotSettings, *, pre_checkout_query: Dict[str, Any]) -> None:
+def _handle_pre_checkout(api: TelegramBotApi, conn, settings: BotSettings, *, pre_checkout_query: Dict[str, Any]) -> None:
     payload = _parse_payload(_safe(pre_checkout_query.get("invoice_payload")))
     offer = _resolve_offer(settings, _safe(payload.get("offer")) or settings.default_offer_slug)
     plan = _plan_map(offer).get(_safe(payload.get("plan")).lower())
+    from_user = dict(pre_checkout_query.get("from") or {})
+    user_id = int(from_user.get("id") or 0)
     ok = bool(plan)
     error_message = ""
     if not plan:
+        ok = False
         error_message = "Plan is unavailable. Please reopen /plans and try again."
     elif int(pre_checkout_query.get("total_amount") or 0) != int(plan.get("stars") or 0):
         ok = False
         error_message = "Price mismatch. Please reopen /plans and try again."
+    _track_event(
+        conn,
+        user_id=user_id,
+        chat_id=user_id,
+        offer_slug=offer.slug,
+        event_type="pre_checkout",
+        status="ok" if ok else "fail",
+        details={"plan_code": _safe(payload.get("plan")), "total_amount": int(pre_checkout_query.get("total_amount") or 0)},
+    )
     api.answer_pre_checkout_query(
         pre_checkout_query_id=_safe(pre_checkout_query.get("id")),
         ok=ok,
@@ -587,9 +700,11 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
     current_offer = _current_offer(conn, settings, user_id=user_id)
 
     if data == "preview":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="preview_requested")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending preview")
         _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif data == "today":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="today_requested")
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         if has_access:
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending full shortlist")
@@ -608,6 +723,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Preview only", show_alert=False)
             _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif data == "plans":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="plans_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening plans")
         api.send_message(
             chat_id=chat_id,
@@ -615,6 +731,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
             reply_markup=_build_plans_keyboard(settings, offer=current_offer),
         )
     elif data == "choose_menu":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="choose_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Choose profession")
         _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
     elif data.startswith("choose:"):
@@ -625,6 +742,14 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Unknown pack", show_alert=True)
         else:
             set_user_selected_offer(conn, user_id=user_id, offer_slug=chosen_offer.slug)
+            _track_event(
+                conn,
+                user_id=user_id,
+                chat_id=chat_id,
+                offer_slug=chosen_offer.slug,
+                event_type="offer_selected",
+                details={"from_offer": current_offer.slug},
+            )
             conn.commit()
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text=f"Switched to {_offer_title(chosen_offer)}")
             api.send_message(
@@ -650,9 +775,17 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Unknown plan", show_alert=True)
         else:
             set_user_selected_offer(conn, user_id=user_id, offer_slug=offer.slug)
+            _track_event(
+                conn,
+                user_id=user_id,
+                chat_id=chat_id,
+                offer_slug=offer.slug,
+                event_type="buy_clicked",
+                details={"plan_code": code},
+            )
             conn.commit()
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening payment")
-            _send_plan_invoice(api, settings, offer=offer, chat_id=chat_id, plan=plan)
+            _send_plan_invoice(api, conn, settings, offer=offer, user_id=user_id, chat_id=chat_id, plan=plan)
     else:
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Unsupported action")
     conn.commit()
@@ -683,6 +816,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     command = _parse_command(text)
 
     if command in ("/start", "/help"):
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="start" if command == "/start" else "help")
         welcome = (
             f"{settings.bot_name}\n"
             f"Current pack: {_offer_title(current_offer)}\n"
@@ -696,8 +830,10 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             reply_markup=_main_menu_keyboard(settings, offer=current_offer, has_access=has_access),
         )
     elif command in ("/choose", "/profession", "/professions"):
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="choose_opened")
         _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
     elif command == "/today":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="today_requested")
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         if has_access:
             _send_feed(
@@ -714,13 +850,21 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         else:
             _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif command in ("/plans", "/buy"):
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="plans_opened")
         api.send_message(
             chat_id=chat_id,
             text=f"Choose a plan for {_offer_title(current_offer)}.",
             reply_markup=_build_plans_keyboard(settings, offer=current_offer),
         )
     elif command == "/status":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="status_viewed")
         _send_status(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+    elif command in ("/adminstats", "/admin", "/stats_admin"):
+        if _is_admin(settings, user_id=user_id, chat_id=chat_id, username=username):
+            _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="admin_stats_viewed")
+            api.send_message(chat_id=chat_id, text=_format_admin_stats(settings, get_bot_analytics_summary(conn)))
+        else:
+            api.send_message(chat_id=chat_id, text="Admin stats are not available for this account.")
     elif command == "/terms":
         api.send_message(chat_id=chat_id, text=_build_terms_text(settings))
     elif command in ("/support", "/paysupport"):
@@ -816,7 +960,7 @@ def main() -> int:
             for upd in updates:
                 offset = int(upd.get("update_id") or 0) + 1
                 if upd.get("pre_checkout_query"):
-                    _handle_pre_checkout(api, settings, pre_checkout_query=dict(upd.get("pre_checkout_query") or {}))
+                    _handle_pre_checkout(api, conn, settings, pre_checkout_query=dict(upd.get("pre_checkout_query") or {}))
                     continue
                 if upd.get("callback_query"):
                     _handle_callback(api, conn, settings, callback_query=dict(upd.get("callback_query") or {}))

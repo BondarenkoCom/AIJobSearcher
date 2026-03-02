@@ -145,6 +145,22 @@ CREATE TABLE IF NOT EXISTS bot_delivery_log (
 
 CREATE INDEX IF NOT EXISTS idx_bot_delivery_user_offer ON bot_delivery_log(user_id, offer_slug);
 CREATE INDEX IF NOT EXISTS idx_bot_delivery_created_at ON bot_delivery_log(created_at);
+
+CREATE TABLE IF NOT EXISTS bot_event_log (
+  bot_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  chat_id INTEGER NOT NULL,
+  offer_slug TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  details_json TEXT,
+  FOREIGN KEY (user_id) REFERENCES bot_users(user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_event_user_type ON bot_event_log(user_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_bot_event_offer_type ON bot_event_log(offer_slug, event_type);
+CREATE INDEX IF NOT EXISTS idx_bot_event_created_at ON bot_event_log(created_at);
 """
 
 
@@ -344,7 +360,7 @@ def add_to_blocklist(
 
 def count_rows(conn: sqlite3.Connection) -> Dict[str, int]:
     out: Dict[str, int] = {}
-    for table in ("leads", "events", "blocklist", "bot_users", "bot_subscriptions", "bot_payments", "bot_delivery_log"):
+    for table in ("leads", "events", "blocklist", "bot_users", "bot_subscriptions", "bot_payments", "bot_delivery_log", "bot_event_log"):
         out[table] = int(conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"])
     return out
 
