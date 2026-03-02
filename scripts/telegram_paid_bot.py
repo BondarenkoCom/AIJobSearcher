@@ -6,7 +6,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -44,6 +44,8 @@ class BotSettings:
     sleep_sec: float
     photo_url: str
     commands: List[Dict[str, str]]
+    free_user_ids: Set[int]
+    free_usernames: Set[str]
 
 
 def _int_env(name: str, default: int) -> int:
@@ -80,6 +82,34 @@ def _parse_payload(payload: str) -> Dict[str, str]:
     return out
 
 
+def _split_csv(raw: str) -> List[str]:
+    out: List[str] = []
+    for part in str(raw or "").replace("\n", ",").split(","):
+        token = part.strip()
+        if token and token not in out:
+            out.append(token)
+    return out
+
+
+def _split_ints(raw: str) -> Set[int]:
+    out: Set[int] = set()
+    for token in _split_csv(raw):
+        try:
+            out.add(int(token))
+        except Exception:
+            continue
+    return out
+
+
+def _split_names(raw: str) -> Set[str]:
+    out: Set[str] = set()
+    for token in _split_csv(raw):
+        name = token.strip().lstrip("@").lower()
+        if name:
+            out.add(name)
+    return out
+
+
 def _offer_bot_cfg(offer: OfferProfile) -> Dict[str, Any]:
     return dict(offer.bot or {})
 
@@ -102,6 +132,18 @@ def _offer_full_limit(offer: OfferProfile) -> int:
 
 def _offer_plans(offer: OfferProfile) -> List[Dict[str, Any]]:
     return list(_offer_bot_cfg(offer).get("plans") or [])
+
+
+def _offer_emoji(offer: OfferProfile) -> str:
+    mapping = {
+        "qa_gig_hunter": "🧪",
+        "software_engineering_hunter": "💻",
+        "data_ai_hunter": "🤖",
+        "cybersecurity_hunter": "🛡️",
+        "devops_cloud_hunter": "☁️",
+        "remote_job_hunter": "📡",
+    }
+    return mapping.get(offer.slug, "🎯")
 
 
 def _selectable_offers(settings: BotSettings) -> List[OfferProfile]:
@@ -139,9 +181,9 @@ def _build_offer_selector_keyboard(settings: BotSettings, *, current_offer_slug:
     for offer in _selectable_offers(settings):
         slug = offer.slug
         title = _offer_title(offer)
-        prefix = "Current: " if slug == current_offer_slug else ""
-        rows.append([{"text": f"{prefix}{title}", "callback_data": f"choose:{slug}"}])
-    rows.append([{"text": "Plans", "callback_data": "plans"}, {"text": "Today", "callback_data": "today"}])
+        prefix = "✅ " if slug == current_offer_slug else ""
+        rows.append([{"text": f"{prefix}{_offer_emoji(offer)} {title}", "callback_data": f"choose:{slug}"}])
+    rows.append([{"text": "💳 Plans", "callback_data": "plans"}, {"text": "📦 Today", "callback_data": "today"}])
     return {"inline_keyboard": rows}
 
 
@@ -152,26 +194,26 @@ def _build_plans_keyboard(settings: BotSettings, *, offer: OfferProfile) -> Dict
         code = _safe(item.get("code")).lower()
         stars = int(item.get("stars") or 0)
         title = _safe(item.get("title")) or code
-        current.append({"text": f"{title} - {stars} XTR", "callback_data": f"buy:{offer.slug}:{code}"})
+        current.append({"text": f"⭐ {title} - {stars} XTR", "callback_data": f"buy:{offer.slug}:{code}"})
         if len(current) == 2:
             rows.append(current)
             current = []
     if current:
         rows.append(current)
-    rows.append([{"text": "Choose profession", "callback_data": "choose_menu"}, {"text": "Preview", "callback_data": "preview"}])
-    rows.append([{"text": "Today", "callback_data": "today"}])
+    rows.append([{"text": "🎯 Choose profession", "callback_data": "choose_menu"}, {"text": "👀 Preview", "callback_data": "preview"}])
+    rows.append([{"text": "📦 Today", "callback_data": "today"}])
     return {"inline_keyboard": rows}
 
 
 def _main_menu_keyboard(settings: BotSettings, *, offer: OfferProfile, has_access: bool) -> Dict[str, Any]:
     rows: List[List[Dict[str, str]]] = [
-        [{"text": "Choose profession", "callback_data": "choose_menu"}],
-        [{"text": "Preview", "callback_data": "preview"}, {"text": "Plans", "callback_data": "plans"}],
+        [{"text": "🎯 Choose profession", "callback_data": "choose_menu"}],
+        [{"text": "👀 Preview", "callback_data": "preview"}, {"text": "💳 Plans", "callback_data": "plans"}],
     ]
     if has_access:
-        rows.append([{"text": "Today's shortlist", "callback_data": "today"}])
+        rows.append([{"text": "📦 Today's shortlist", "callback_data": "today"}])
     else:
-        rows.append([{"text": "Unlock full shortlist", "callback_data": "plans"}])
+        rows.append([{"text": "🔓 Unlock full shortlist", "callback_data": "plans"}])
     return {"inline_keyboard": rows}
 
 
@@ -198,6 +240,7 @@ def _why_selected(row: Dict[str, Any]) -> str:
 
 
 def _format_card(row: Dict[str, Any], *, index: int) -> str:
+    stack_hits = [str(x).strip() for x in row.get("stack_hits") or [] if str(x).strip()]
     lines = [
         f"{index}. {_safe(row.get('title'))}",
         f"Platform: {_safe(row.get('platform')) or '-'}",
@@ -205,10 +248,48 @@ def _format_card(row: Dict[str, Any], *, index: int) -> str:
         f"Location: {_safe(row.get('location')) or 'Remote/unspecified'}",
         f"Contact: {_safe(row.get('contact_method')) or '-'}",
         f"Score: {_safe(row.get('score')) or '-'}",
+    ]
+    if stack_hits:
+        lines.append(f"Stack: {', '.join(stack_hits[:6])}")
+    lines.extend(
+        [
         f"Why it fits: {_why_selected(row)}",
         f"Link: {_safe(row.get('url'))}",
-    ]
+        ]
+    )
     return "\n".join(lines)
+
+
+def _is_free_user(settings: BotSettings, *, user_id: int, username: str) -> bool:
+    if int(user_id or 0) in settings.free_user_ids:
+        return True
+    uname = _safe(username).lstrip("@").lower()
+    return bool(uname) and uname in settings.free_usernames
+
+
+def _has_offer_access(settings: BotSettings, conn, *, user_id: int, username: str, offer_slug: str) -> bool:
+    if _is_free_user(settings, user_id=user_id, username=username):
+        return True
+    return get_active_subscription(conn, user_id=user_id, offer_slug=offer_slug) is not None
+
+
+def _chunk_text(rows: List[Dict[str, Any]], *, chunk_size: int) -> List[str]:
+    out: List[str] = []
+    size = max(1, int(chunk_size))
+    for start in range(0, len(rows), size):
+        block = rows[start:start + size]
+        parts = [_format_card(row, index=start + idx + 1) for idx, row in enumerate(block)]
+        out.append("\n\n".join(parts))
+    return out
+
+
+def _delivery_label(delivery_kind: str) -> str:
+    mapping = {
+        "preview": "preview",
+        "member_full": "full access",
+        "paid_full": "full access",
+    }
+    return mapping.get(_safe(delivery_kind), _safe(delivery_kind))
 
 
 def _build_terms_text(settings: BotSettings) -> str:
@@ -243,7 +324,7 @@ def _send_offer_picker(api: TelegramBotApi, settings: BotSettings, *, chat_id: i
         f"{settings.bot_name}",
         f"Current pack: {_offer_title(current_offer)}",
         "",
-        "Choose the profession pack you want to hunt.",
+        "🎯 Choose the profession pack you want to hunt.",
         "The scanner and shortlist change with the selected pack.",
     ]
     api.send_message(
@@ -260,6 +341,7 @@ def _send_feed(
     settings: BotSettings,
     offer: OfferProfile,
     user_id: int,
+    username: str,
     chat_id: int,
     limit: int,
     delivery_kind: str,
@@ -285,17 +367,18 @@ def _send_feed(
     header = (
         f"{_offer_title(offer)}\n"
         f"Leads in this drop: {len(rows)}\n"
-        f"Mode: {delivery_kind}"
+        f"Mode: {_delivery_label(delivery_kind)}"
     )
-    has_access = delivery_kind != "preview"
+    has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug)
     first = api.send_message(
         chat_id=chat_id,
         text=header,
         reply_markup=_main_menu_keyboard(settings, offer=offer, has_access=has_access),
     )
     sent = 1
-    for idx, row in enumerate(rows, start=1):
-        api.send_message(chat_id=chat_id, text=_format_card(row, index=idx))
+    chunk_size = 3 if delivery_kind == "preview" else 4
+    for chunk in _chunk_text(rows, chunk_size=chunk_size):
+        api.send_message(chat_id=chat_id, text=chunk)
         sent += 1
     log_delivery(
         conn,
@@ -315,6 +398,7 @@ def _send_preview_with_pitch(
     *,
     offer: OfferProfile,
     user_id: int,
+    username: str,
     chat_id: int,
 ) -> None:
     _send_feed(
@@ -323,13 +407,14 @@ def _send_preview_with_pitch(
         settings=settings,
         offer=offer,
         user_id=user_id,
+        username=username,
         chat_id=chat_id,
         limit=_offer_preview_limit(offer),
         delivery_kind="preview",
     )
     pitch_lines = [
         f"{_offer_title(offer)}",
-        "Unlock full access with Telegram Stars:",
+        "🔓 Unlock full access with Telegram Stars:",
     ]
     for item in _offer_plans(offer):
         pitch_lines.append(f"- {_safe(item.get('title'))}: {int(item.get('stars') or 0)} XTR")
@@ -347,11 +432,20 @@ def _send_status(
     *,
     offer: OfferProfile,
     user_id: int,
+    username: str,
     chat_id: int,
 ) -> None:
     summary = get_user_summary(conn, user_id=user_id, offer_slug=offer.slug)
     active = summary.get("active_subscription")
-    if active:
+    if _is_free_user(settings, user_id=user_id, username=username):
+        text = (
+            f"Current pack: {_offer_title(offer)}\n"
+            "Status: free test access\n"
+            f"Payments: {summary.get('payments_count')}\n"
+            f"Deliveries: {summary.get('deliveries_count')}"
+        )
+        has_access = True
+    elif active:
         text = (
             f"Current pack: {_offer_title(offer)}\n"
             "Status: active\n"
@@ -360,6 +454,7 @@ def _send_status(
             f"Payments: {summary.get('payments_count')}\n"
             f"Deliveries: {summary.get('deliveries_count')}"
         )
+        has_access = True
     else:
         text = (
             f"Current pack: {_offer_title(offer)}\n"
@@ -367,7 +462,8 @@ def _send_status(
             f"Payments: {summary.get('payments_count')}\n"
             f"Deliveries: {summary.get('deliveries_count')}"
         )
-    api.send_message(chat_id=chat_id, text=text, reply_markup=_main_menu_keyboard(settings, offer=offer, has_access=bool(active)))
+        has_access = False
+    api.send_message(chat_id=chat_id, text=text, reply_markup=_main_menu_keyboard(settings, offer=offer, has_access=has_access))
 
 
 def _send_plan_invoice(
@@ -402,12 +498,13 @@ def _handle_successful_payment(api: TelegramBotApi, conn, settings: BotSettings,
     chat = dict(message.get("chat") or {})
     user_id = int(user.get("id") or 0)
     chat_id = int(chat.get("id") or 0)
+    username = _safe(user.get("username"))
     upsert_bot_user(
         conn,
         BotUser(
             user_id=user_id,
             chat_id=chat_id,
-            username=_safe(user.get("username")),
+            username=username,
             first_name=_safe(user.get("first_name")),
             last_name=_safe(user.get("last_name")),
         ),
@@ -442,6 +539,7 @@ def _handle_successful_payment(api: TelegramBotApi, conn, settings: BotSettings,
         settings=settings,
         offer=offer,
         user_id=user_id,
+        username=_safe(user.get("username")),
         chat_id=chat_id,
         limit=_offer_full_limit(offer),
         delivery_kind="paid_full",
@@ -474,12 +572,13 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
     chat = dict(msg.get("chat") or {})
     user_id = int(from_user.get("id") or 0)
     chat_id = int(chat.get("id") or 0)
+    username = _safe(from_user.get("username"))
     upsert_bot_user(
         conn,
         BotUser(
             user_id=user_id,
             chat_id=chat_id,
-            username=_safe(from_user.get("username")),
+            username=username,
             first_name=_safe(from_user.get("first_name")),
             last_name=_safe(from_user.get("last_name")),
         ),
@@ -489,10 +588,10 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
 
     if data == "preview":
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending preview")
-        _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, chat_id=chat_id)
+        _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif data == "today":
-        active = get_active_subscription(conn, user_id=user_id, offer_slug=current_offer.slug)
-        if active:
+        has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
+        if has_access:
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending full shortlist")
             _send_feed(
                 api=api,
@@ -500,13 +599,14 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
                 settings=settings,
                 offer=current_offer,
                 user_id=user_id,
+                username=username,
                 chat_id=chat_id,
                 limit=_offer_full_limit(current_offer),
                 delivery_kind="member_full",
             )
         else:
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Preview only", show_alert=False)
-            _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, chat_id=chat_id)
+            _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif data == "plans":
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening plans")
         api.send_message(
@@ -531,15 +631,15 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
                 chat_id=chat_id,
                 text=(
                     f"Current pack: {_offer_title(chosen_offer)}\n"
-                    f"{_offer_summary(chosen_offer)}"
+                    f"{_offer_summary(chosen_offer)}\n"
+                    "Use Preview, Today, or Plans."
                 ),
                 reply_markup=_main_menu_keyboard(
                     settings,
                     offer=chosen_offer,
-                    has_access=(get_active_subscription(conn, user_id=user_id, offer_slug=chosen_offer.slug) is not None),
+                    has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=chosen_offer.slug),
                 ),
             )
-            _send_preview_with_pitch(api, conn, settings, offer=chosen_offer, user_id=user_id, chat_id=chat_id)
     elif data.startswith("buy:"):
         parts = data.split(":", 2)
         chosen_slug = parts[1].strip() if len(parts) >= 2 else current_offer.slug
@@ -588,31 +688,30 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             "I send filtered remote work leads, not generic chat.\n"
             "Use /choose to switch profession packs, /today for the shortlist, or /plans to unlock full access."
         )
-        has_access = get_active_subscription(conn, user_id=user_id, offer_slug=current_offer.slug) is not None
+        has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         api.send_message(
             chat_id=chat_id,
             text=welcome,
             reply_markup=_main_menu_keyboard(settings, offer=current_offer, has_access=has_access),
         )
-        _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
-        _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, chat_id=chat_id)
     elif command in ("/choose", "/profession", "/professions"):
         _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
     elif command == "/today":
-        active = get_active_subscription(conn, user_id=user_id, offer_slug=current_offer.slug)
-        if active:
+        has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
+        if has_access:
             _send_feed(
                 api=api,
                 conn=conn,
                 settings=settings,
                 offer=current_offer,
                 user_id=user_id,
+                username=username,
                 chat_id=chat_id,
                 limit=_offer_full_limit(current_offer),
                 delivery_kind="member_full",
             )
         else:
-            _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, chat_id=chat_id)
+            _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif command in ("/plans", "/buy"):
         api.send_message(
             chat_id=chat_id,
@@ -620,7 +719,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             reply_markup=_build_plans_keyboard(settings, offer=current_offer),
         )
     elif command == "/status":
-        _send_status(api, conn, settings, offer=current_offer, user_id=user_id, chat_id=chat_id)
+        _send_status(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif command == "/terms":
         api.send_message(chat_id=chat_id, text=_build_terms_text(settings))
     elif command in ("/support", "/paysupport"):
@@ -629,7 +728,11 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         api.send_message(
             chat_id=chat_id,
             text="Unknown command. Try /choose, /today, /plans, /status, /terms, or /support.",
-            reply_markup=_main_menu_keyboard(settings, offer=current_offer, has_access=False),
+            reply_markup=_main_menu_keyboard(
+                settings,
+                offer=current_offer,
+                has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug),
+            ),
         )
     conn.commit()
 
@@ -664,6 +767,8 @@ def _load_settings(args) -> BotSettings:
     terms_text = _safe(os.getenv("TELEGRAM_TERMS_TEXT"))
     if terms_url and not terms_text:
         terms_text = f"Terms: {terms_url}"
+    free_user_ids = _split_ints(os.getenv("TELEGRAM_FREE_USER_IDS") or "")
+    free_usernames = _split_names(os.getenv("TELEGRAM_FREE_USERNAMES") or "")
 
     return BotSettings(
         token=token,
@@ -679,6 +784,8 @@ def _load_settings(args) -> BotSettings:
         sleep_sec=max(0.2, float(args.sleep_sec)),
         photo_url=_safe(os.getenv("TELEGRAM_BOT_PHOTO_URL")),
         commands=list(bot_cfg.get("commands") or []),
+        free_user_ids=free_user_ids,
+        free_usernames=free_usernames,
     )
 
 

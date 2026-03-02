@@ -34,6 +34,16 @@ def compose_offer_text(row: Dict[str, Any], raw: Dict[str, Any]) -> str:
     return "\n".join([p for p in parts if p]).lower()
 
 
+def offer_stack_hits(row: Dict[str, Any], raw: Dict[str, Any], offer: OfferProfile) -> List[str]:
+    text = compose_offer_text(row, raw)
+    out: List[str] = []
+    for word in offer.export.get("stack_keywords") or []:
+        token = str(word).strip().lower()
+        if token and token in text and token not in out:
+            out.append(token)
+    return out
+
+
 def offer_contact_method(row: Dict[str, Any], raw: Dict[str, Any], offer: OfferProfile) -> str:
     raw_emails = raw.get("emails")
     if isinstance(raw_emails, list) and any("@" in safe_text(v) for v in raw_emails):
@@ -77,6 +87,7 @@ def matches_offer(row: Dict[str, Any], raw: Dict[str, Any], offer: OfferProfile)
 def offer_score(row: Dict[str, Any], raw: Dict[str, Any], offer: OfferProfile) -> int:
     title = safe_text(row.get("job_title")).lower()
     text = compose_offer_text(row, raw)
+    stack_hits = offer_stack_hits(row, raw, offer)
     score = 0
     for word in offer.export.get("title_keyword_any") or []:
         token = str(word).strip().lower()
@@ -92,6 +103,7 @@ def offer_score(row: Dict[str, Any], raw: Dict[str, Any], offer: OfferProfile) -
         score += 2
     if offer_contact_method(row, raw, offer) in set(offer.export.get("prefer_contact") or []):
         score += 2
+    score += min(3, len(stack_hits))
     return score
 
 
@@ -132,6 +144,7 @@ def build_offer_rows(conn, *, offer: OfferProfile, scan_limit: int, limit: int) 
                 "created_at": safe_text(row.get("created_at")),
                 "score": offer_score(row, raw, offer),
                 "snippet": snippet,
+                "stack_hits": offer_stack_hits(row, raw, offer),
             }
         )
         if len(selected) >= int(limit):
