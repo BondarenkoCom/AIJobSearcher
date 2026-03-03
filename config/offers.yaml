@@ -17,6 +17,8 @@ _shared:
         description: "Choose profession pack"
       - cmd: "stack"
         description: "Choose stack focus"
+      - cmd: "sources"
+        description: "See shortlist sources"
       - cmd: "today"
         description: "Get today's shortlist"
       - cmd: "plans"

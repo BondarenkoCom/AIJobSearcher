@@ -137,6 +137,7 @@ def build_offer_rows(conn, *, offer: OfferProfile, scan_limit: int, limit: int) 
                 "title": safe_text(row.get("job_title")),
                 "company": safe_text(row.get("company")),
                 "platform": safe_text(row.get("platform")),
+                "source": safe_text(row.get("source")),
                 "lead_type": safe_text(row.get("lead_type")),
                 "location": safe_text(row.get("location")),
                 "url": safe_text(row.get("url")),
