@@ -15,6 +15,8 @@ _shared:
         description: "Open preview and menu"
       - cmd: "choose"
         description: "Choose profession pack"
+      - cmd: "stack"
+        description: "Choose stack focus"
       - cmd: "today"
         description: "Get today's shortlist"
       - cmd: "plans"
@@ -51,6 +53,22 @@ offers:
     bot:
       <<: *bot_common
       plans: *plans_standard
+      stack_options:
+        - code: "playwright"
+          label: "Playwright"
+          match_any: ["playwright"]
+        - code: "selenium"
+          label: "Selenium"
+          match_any: ["selenium"]
+        - code: "api"
+          label: "API testing"
+          match_any: ["api testing", "postman", "rest api", "graphql"]
+        - code: "python"
+          label: "Python"
+          match_any: ["python"]
+        - code: "csharp"
+          label: "C# / .NET"
+          match_any: ["c#", ".net"]
     scanners:
       - name: "job_board_public"
         optional: false
@@ -279,6 +297,25 @@ offers:
     bot:
       <<: *bot_common
       plans: *plans_standard
+      stack_options:
+        - code: "python"
+          label: "Python"
+          match_any: ["python", "django", "flask"]
+        - code: "php"
+          label: "PHP / Laravel"
+          match_any: ["php", "laravel"]
+        - code: "csharp"
+          label: "C# / .NET"
+          match_any: ["c#", ".net"]
+        - code: "java"
+          label: "Java / Spring"
+          match_any: ["java", "spring"]
+        - code: "jsts"
+          label: "JavaScript / TypeScript"
+          match_any: ["javascript", "typescript", "react", "node"]
+        - code: "go"
+          label: "Go"
+          match_any: ["golang", "go"]
     scanners:
       - name: "job_board_public"
         optional: false
@@ -496,6 +533,19 @@ offers:
     bot:
       <<: *bot_common
       plans: *plans_standard
+      stack_options:
+        - code: "python"
+          label: "Python"
+          match_any: ["python"]
+        - code: "sql"
+          label: "SQL / Analytics"
+          match_any: ["sql", "analytics engineer", "data analyst"]
+        - code: "ml"
+          label: "ML / AI"
+          match_any: ["machine learning", "ml engineer", "ai engineer", "llm", "nlp"]
+        - code: "spark"
+          label: "Spark / PySpark"
+          match_any: ["spark", "pyspark"]
     scanners:
       - name: "job_board_public"
         optional: false
@@ -690,6 +740,19 @@ offers:
     bot:
       <<: *bot_common
       plans: *plans_standard
+      stack_options:
+        - code: "appsec"
+          label: "AppSec"
+          match_any: ["appsec", "application security"]
+        - code: "soc"
+          label: "SOC / SIEM"
+          match_any: ["soc", "siem", "security analyst"]
+        - code: "cloudsec"
+          label: "Cloud Security"
+          match_any: ["cloud security", "aws", "azure", "gcp"]
+        - code: "pentest"
+          label: "Pentest"
+          match_any: ["pentest", "pentester", "vulnerability"]
     scanners:
       - name: "job_board_public"
         optional: false
@@ -878,6 +941,22 @@ offers:
     bot:
       <<: *bot_common
       plans: *plans_standard
+      stack_options:
+        - code: "k8s"
+          label: "Kubernetes"
+          match_any: ["kubernetes"]
+        - code: "terraform"
+          label: "Terraform"
+          match_any: ["terraform"]
+        - code: "aws"
+          label: "AWS"
+          match_any: ["aws"]
+        - code: "gcp"
+          label: "GCP / Azure"
+          match_any: ["gcp", "azure"]
+        - code: "python"
+          label: "Python"
+          match_any: ["python"]
     scanners:
       - name: "job_board_public"
         optional: false

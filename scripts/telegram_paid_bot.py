@@ -23,10 +23,12 @@ from src.telegram_paid_store import (  # noqa: E402
     get_bot_analytics_summary,
     get_active_subscription,
     get_user_selected_offer,
+    get_user_selected_stack,
     get_user_summary,
     log_bot_event,
     log_delivery,
     set_user_selected_offer,
+    set_user_selected_stack,
     upsert_bot_user,
 )
 
@@ -178,6 +180,46 @@ def _plan_map(offer: OfferProfile) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def _offer_stack_options(offer: OfferProfile) -> List[Dict[str, Any]]:
+    raw = list(_offer_bot_cfg(offer).get("stack_options") or [])
+    out: List[Dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        code = _safe(item.get("code")).lower()
+        label = _safe(item.get("label"))
+        tokens = [str(x).strip().lower() for x in item.get("match_any") or [] if str(x).strip()]
+        if code and label:
+            out.append({"code": code, "label": label, "match_any": tokens})
+    return out
+
+
+def _stack_option_map(offer: OfferProfile) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for item in _offer_stack_options(offer):
+        code = _safe(item.get("code")).lower()
+        if code:
+            out[code] = dict(item)
+    return out
+
+
+def _current_stack_code(conn, *, user_id: int, offer: OfferProfile) -> str:
+    code = _safe(get_user_selected_stack(conn, user_id=user_id, offer_slug=offer.slug)).lower()
+    if code and code in _stack_option_map(offer):
+        return code
+    return ""
+
+
+def _current_stack_option(conn, *, user_id: int, offer: OfferProfile) -> Dict[str, Any]:
+    code = _current_stack_code(conn, user_id=user_id, offer=offer)
+    return dict(_stack_option_map(offer).get(code) or {})
+
+
+def _selected_stack_label(conn, *, user_id: int, offer: OfferProfile) -> str:
+    item = _current_stack_option(conn, user_id=user_id, offer=offer)
+    return _safe(item.get("label")) or "Any stack"
+
+
 def _build_offer_selector_keyboard(settings: BotSettings, *, current_offer_slug: str) -> Dict[str, Any]:
     rows: List[List[Dict[str, str]]] = []
     for offer in _selectable_offers(settings):
@@ -185,7 +227,25 @@ def _build_offer_selector_keyboard(settings: BotSettings, *, current_offer_slug:
         title = _offer_title(offer)
         prefix = "✅ " if slug == current_offer_slug else ""
         rows.append([{"text": f"{prefix}{_offer_emoji(offer)} {title}", "callback_data": f"choose:{slug}"}])
-    rows.append([{"text": "💳 Plans", "callback_data": "plans"}, {"text": "📦 Today", "callback_data": "today"}])
+    rows.append([{"text": "⚙️ Stack", "callback_data": "stack_menu"}, {"text": "📦 Today", "callback_data": "today"}])
+    rows.append([{"text": "💳 Plans", "callback_data": "plans"}])
+    return {"inline_keyboard": rows}
+
+
+def _build_stack_selector_keyboard(settings: BotSettings, *, offer: OfferProfile, current_stack_code: str) -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = [[{"text": "✅ Any stack" if not current_stack_code else "Any stack", "callback_data": "stack:any"}]]
+    current: List[Dict[str, str]] = []
+    for item in _offer_stack_options(offer):
+        code = _safe(item.get("code")).lower()
+        label = _safe(item.get("label"))
+        prefix = "✅ " if code == current_stack_code else ""
+        current.append({"text": f"{prefix}{label}", "callback_data": f"stack:{code}"})
+        if len(current) == 2:
+            rows.append(current)
+            current = []
+    if current:
+        rows.append(current)
+    rows.append([{"text": "🎯 Profession", "callback_data": "choose_menu"}, {"text": "📦 Today", "callback_data": "today"}])
     return {"inline_keyboard": rows}
 
 
@@ -202,14 +262,15 @@ def _build_plans_keyboard(settings: BotSettings, *, offer: OfferProfile) -> Dict
             current = []
     if current:
         rows.append(current)
-    rows.append([{"text": "🎯 Choose profession", "callback_data": "choose_menu"}, {"text": "👀 Preview", "callback_data": "preview"}])
+    rows.append([{"text": "🎯 Profession", "callback_data": "choose_menu"}, {"text": "⚙️ Stack", "callback_data": "stack_menu"}])
+    rows.append([{"text": "👀 Preview", "callback_data": "preview"}])
     rows.append([{"text": "📦 Today", "callback_data": "today"}])
     return {"inline_keyboard": rows}
 
 
 def _main_menu_keyboard(settings: BotSettings, *, offer: OfferProfile, has_access: bool) -> Dict[str, Any]:
     rows: List[List[Dict[str, str]]] = [
-        [{"text": "🎯 Choose profession", "callback_data": "choose_menu"}],
+        [{"text": "🎯 Profession", "callback_data": "choose_menu"}, {"text": "⚙️ Stack", "callback_data": "stack_menu"}],
         [{"text": "👀 Preview", "callback_data": "preview"}, {"text": "💳 Plans", "callback_data": "plans"}],
     ]
     if has_access:
@@ -350,6 +411,50 @@ def _format_admin_stats(settings: BotSettings, summary: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _row_matches_stack(row: Dict[str, Any], *, stack_option: Dict[str, Any]) -> bool:
+    tokens = [str(x).strip().lower() for x in stack_option.get("match_any") or [] if str(x).strip()]
+    if not tokens:
+        return False
+    stack_hits = [str(x).strip().lower() for x in row.get("stack_hits") or [] if str(x).strip()]
+    text = f"{_safe(row.get('title'))} {_safe(row.get('snippet'))}".lower()
+    for token in tokens:
+        if token in stack_hits or token in text:
+            return True
+    return False
+
+
+def _apply_stack_preference(
+    rows: List[Dict[str, Any]],
+    *,
+    offer: OfferProfile,
+    stack_code: str,
+    limit: int,
+) -> tuple[List[Dict[str, Any]], int, bool]:
+    code = _safe(stack_code).lower()
+    if not code:
+        trimmed = list(rows[: max(1, int(limit))])
+        return trimmed, len(trimmed), False
+
+    stack_option = _stack_option_map(offer).get(code)
+    if not stack_option:
+        trimmed = list(rows[: max(1, int(limit))])
+        return trimmed, len(trimmed), False
+
+    matched: List[Dict[str, Any]] = []
+    fallback: List[Dict[str, Any]] = []
+    for row in rows:
+        if _row_matches_stack(row, stack_option=stack_option):
+            matched.append(row)
+        else:
+            fallback.append(row)
+
+    chosen = list(matched[: max(1, int(limit))])
+    if len(chosen) < int(limit):
+        chosen.extend(fallback[: max(0, int(limit) - len(chosen))])
+    broadened = len(chosen) > len(matched[: max(1, int(limit))])
+    return chosen[: max(1, int(limit))], len(matched), broadened
+
+
 def _chunk_text(rows: List[Dict[str, Any]], *, chunk_size: int) -> List[str]:
     out: List[str] = []
     size = max(1, int(chunk_size))
@@ -391,7 +496,8 @@ def _get_rows(settings: BotSettings, *, offer: OfferProfile, limit: int) -> List
     conn = db_connect(settings.db_path)
     try:
         init_db(conn)
-        return build_offer_rows(conn, offer=offer, scan_limit=max(500, limit * 4), limit=limit)
+        fetch_limit = max(int(limit) * 8, 24)
+        return build_offer_rows(conn, offer=offer, scan_limit=max(500, fetch_limit * 4), limit=fetch_limit)
     finally:
         conn.close()
 
@@ -411,6 +517,40 @@ def _send_offer_picker(api: TelegramBotApi, settings: BotSettings, *, chat_id: i
     )
 
 
+def _send_stack_picker(api: TelegramBotApi, conn, settings: BotSettings, *, chat_id: int, user_id: int, current_offer: OfferProfile, username: str) -> None:
+    if not _offer_stack_options(current_offer):
+        api.send_message(
+            chat_id=chat_id,
+            text=(
+                f"{_offer_title(current_offer)}\n"
+                "Stack filter is not configured for this pack yet."
+            ),
+            reply_markup=_main_menu_keyboard(
+                settings,
+                offer=current_offer,
+                has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug),
+            ),
+        )
+        return
+    lines = [
+        f"{settings.bot_name}",
+        f"Current pack: {_offer_title(current_offer)}",
+        f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}",
+        "",
+        "Choose a stack focus.",
+        "Exact stack hits are prioritized first. If they are too few, the shortlist is filled with broader fit.",
+    ]
+    api.send_message(
+        chat_id=chat_id,
+        text="\n".join(lines),
+        reply_markup=_build_stack_selector_keyboard(
+            settings,
+            offer=current_offer,
+            current_stack_code=_current_stack_code(conn, user_id=user_id, offer=current_offer),
+        ),
+    )
+
+
 def _send_feed(
     *,
     api: TelegramBotApi,
@@ -423,7 +563,15 @@ def _send_feed(
     limit: int,
     delivery_kind: str,
 ) -> None:
-    rows = _get_rows(settings, offer=offer, limit=limit)
+    stack_code = _current_stack_code(conn, user_id=user_id, offer=offer)
+    stack_limit = 5 if stack_code else limit
+    rows_all = _get_rows(settings, offer=offer, limit=max(limit, stack_limit))
+    rows, matched_count, broadened = _apply_stack_preference(
+        rows_all,
+        offer=offer,
+        stack_code=stack_code,
+        limit=stack_limit if delivery_kind != "preview" else min(stack_limit, limit),
+    )
     if not rows:
         msg = api.send_message(
             chat_id=chat_id,
@@ -446,6 +594,14 @@ def _send_feed(
         f"Leads in this drop: {len(rows)}\n"
         f"Mode: {_delivery_label(delivery_kind)}"
     )
+    stack_label = _selected_stack_label(conn, user_id=user_id, offer=offer)
+    if stack_code:
+        if matched_count <= 0:
+            header += f"\nStack focus: {stack_label} (filled with broader fit)"
+        elif broadened:
+            header += f"\nStack focus: {stack_label} ({matched_count} exact hits, rest broadened)"
+        else:
+            header += f"\nStack focus: {stack_label}"
     has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug)
     first = api.send_message(
         chat_id=chat_id,
@@ -464,7 +620,7 @@ def _send_feed(
         delivery_kind=delivery_kind,
         item_count=len(rows),
         message_id=first.get("message_id"),
-        details={"messages_sent": sent},
+        details={"messages_sent": sent, "stack_code": stack_code, "matched_count": matched_count, "broadened": broadened},
     )
 
 
@@ -514,9 +670,11 @@ def _send_status(
 ) -> None:
     summary = get_user_summary(conn, user_id=user_id, offer_slug=offer.slug)
     active = summary.get("active_subscription")
+    stack_label = _selected_stack_label(conn, user_id=user_id, offer=offer)
     if _is_free_user(settings, user_id=user_id, username=username):
         text = (
             f"Current pack: {_offer_title(offer)}\n"
+            f"Current stack: {stack_label}\n"
             "Status: free test access\n"
             f"Payments: {summary.get('payments_count')}\n"
             f"Deliveries: {summary.get('deliveries_count')}"
@@ -525,6 +683,7 @@ def _send_status(
     elif active:
         text = (
             f"Current pack: {_offer_title(offer)}\n"
+            f"Current stack: {stack_label}\n"
             "Status: active\n"
             f"Plan: {_safe(active.get('plan_code'))}\n"
             f"Access until: {_safe(active.get('ends_at'))}\n"
@@ -535,6 +694,7 @@ def _send_status(
     else:
         text = (
             f"Current pack: {_offer_title(offer)}\n"
+            f"Current stack: {stack_label}\n"
             "Status: no active access\n"
             f"Payments: {summary.get('payments_count')}\n"
             f"Deliveries: {summary.get('deliveries_count')}"
@@ -734,6 +894,10 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="choose_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Choose profession")
         _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
+    elif data == "stack_menu":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="stack_opened")
+        api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Choose stack")
+        _send_stack_picker(api, conn, settings, chat_id=chat_id, user_id=user_id, current_offer=current_offer, username=username)
     elif data.startswith("choose:"):
         chosen_slug = data.split(":", 1)[1].strip()
         chosen_offer = settings.offers.get(chosen_slug)
@@ -756,13 +920,47 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
                 chat_id=chat_id,
                 text=(
                     f"Current pack: {_offer_title(chosen_offer)}\n"
+                    f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=chosen_offer)}\n"
                     f"{_offer_summary(chosen_offer)}\n"
-                    "Use Preview, Today, or Plans."
+                    "Use Stack, Preview, Today, or Plans."
                 ),
                 reply_markup=_main_menu_keyboard(
                     settings,
                     offer=chosen_offer,
                     has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=chosen_offer.slug),
+                ),
+            )
+    elif data.startswith("stack:"):
+        chosen_code = data.split(":", 1)[1].strip().lower()
+        stack_map = _stack_option_map(current_offer)
+        if chosen_code and chosen_code != "any" and chosen_code not in stack_map:
+            api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Unknown stack", show_alert=True)
+        else:
+            set_user_selected_stack(conn, user_id=user_id, offer_slug=current_offer.slug, stack_code="" if chosen_code == "any" else chosen_code)
+            _track_event(
+                conn,
+                user_id=user_id,
+                chat_id=chat_id,
+                offer_slug=current_offer.slug,
+                event_type="stack_selected",
+                details={"stack_code": "" if chosen_code == "any" else chosen_code},
+            )
+            conn.commit()
+            api.answer_callback_query(
+                callback_query_id=_safe(callback_query.get("id")),
+                text=f"Stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}",
+            )
+            api.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"Current pack: {_offer_title(current_offer)}\n"
+                    f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}\n"
+                    "Today's shortlist will now prioritize this stack."
+                ),
+                reply_markup=_main_menu_keyboard(
+                    settings,
+                    offer=current_offer,
+                    has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug),
                 ),
             )
     elif data.startswith("buy:"):
@@ -820,8 +1018,9 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         welcome = (
             f"{settings.bot_name}\n"
             f"Current pack: {_offer_title(current_offer)}\n"
+            f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}\n"
             "I send filtered remote work leads, not generic chat.\n"
-            "Use /choose to switch profession packs, /today for the shortlist, or /plans to unlock full access."
+            "Use /choose to switch profession packs, /stack to focus the stack, /today for the shortlist, or /plans to unlock full access."
         )
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         api.send_message(
@@ -832,6 +1031,9 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     elif command in ("/choose", "/profession", "/professions"):
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="choose_opened")
         _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
+    elif command == "/stack":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="stack_opened")
+        _send_stack_picker(api, conn, settings, chat_id=chat_id, user_id=user_id, current_offer=current_offer, username=username)
     elif command == "/today":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="today_requested")
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
@@ -872,7 +1074,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     else:
         api.send_message(
             chat_id=chat_id,
-            text="Unknown command. Try /choose, /today, /plans, /status, /terms, or /support.",
+            text="Unknown command. Try /choose, /stack, /today, /plans, /status, /terms, or /support.",
             reply_markup=_main_menu_keyboard(
                 settings,
                 offer=current_offer,

@@ -97,6 +97,20 @@ def set_user_selected_offer(conn: sqlite3.Connection, *, user_id: int, offer_slu
     )
 
 
+def set_user_selected_stack(conn: sqlite3.Connection, *, user_id: int, offer_slug: str, stack_code: str) -> None:
+    now = _now_iso()
+    conn.execute(
+        """
+        INSERT INTO profile_kv (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at
+        """,
+        (_pref_key(user_id, f"stack:{_safe(offer_slug)}"), _safe(stack_code), now),
+    )
+
+
 def get_user_selected_offer(conn: sqlite3.Connection, *, user_id: int) -> str:
     row = conn.execute(
         """
@@ -106,6 +120,19 @@ def get_user_selected_offer(conn: sqlite3.Connection, *, user_id: int) -> str:
         LIMIT 1
         """,
         (_pref_key(user_id, "selected_offer"),),
+    ).fetchone()
+    return _safe(row["value"]) if row is not None else ""
+
+
+def get_user_selected_stack(conn: sqlite3.Connection, *, user_id: int, offer_slug: str) -> str:
+    row = conn.execute(
+        """
+        SELECT value
+        FROM profile_kv
+        WHERE key = ?
+        LIMIT 1
+        """,
+        (_pref_key(user_id, f"stack:{_safe(offer_slug)}"),),
     ).fetchone()
     return _safe(row["value"]) if row is not None else ""
 
