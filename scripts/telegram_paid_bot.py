@@ -1151,6 +1151,30 @@ def _send_sources(
     )
 
 
+def _send_button_progress(api: TelegramBotApi, *, chat_id: int, text: str) -> None:
+    try:
+        api.send_chat_action(chat_id=chat_id, action="typing")
+    except Exception:
+        pass
+    try:
+        api.send_message(chat_id=chat_id, text=text)
+    except Exception:
+        pass
+
+
+def _send_button_failure(api: TelegramBotApi, *, chat_id: int, label: str) -> None:
+    try:
+        api.send_message(
+            chat_id=chat_id,
+            text=(
+                f"Sorry, {label} failed.\n"
+                "Wait 5-10 seconds and try again."
+            ),
+        )
+    except Exception:
+        pass
+
+
 def _send_feed(
     *,
     api: TelegramBotApi,
@@ -1923,26 +1947,74 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
     if data == "preview":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="preview_requested")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending preview")
-        _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+        _send_button_progress(
+            api,
+            chat_id=chat_id,
+            text=(
+                "⏳ Working on it.\n"
+                "I am building your preview now."
+            ),
+        )
+        try:
+            _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+        except Exception as e:
+            print(f"[tg-paid-bot] preview callback failed: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            _send_button_failure(api, chat_id=chat_id, label="that preview")
     elif data == "today":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="today_requested")
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         if has_access:
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending full shortlist")
-            _send_feed(
-                api=api,
-                conn=conn,
-                settings=settings,
-                offer=current_offer,
-                user_id=user_id,
-                username=username,
+            _send_button_progress(
+                api,
                 chat_id=chat_id,
-                limit=_offer_full_limit(current_offer),
-                delivery_kind="member_full",
+                text=(
+                    "⏳ Working on it.\n"
+                    "I am building today's shortlist now."
+                ),
             )
+            try:
+                _send_feed(
+                    api=api,
+                    conn=conn,
+                    settings=settings,
+                    offer=current_offer,
+                    user_id=user_id,
+                    username=username,
+                    chat_id=chat_id,
+                    limit=_offer_full_limit(current_offer),
+                    delivery_kind="member_full",
+                )
+            except Exception as e:
+                print(f"[tg-paid-bot] today callback failed: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                _send_button_failure(api, chat_id=chat_id, label="today's shortlist")
         else:
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Preview only", show_alert=False)
-            _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+            _send_button_progress(
+                api,
+                chat_id=chat_id,
+                text=(
+                    "⏳ Working on it.\n"
+                    "I am building today's preview now."
+                ),
+            )
+            try:
+                _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+            except Exception as e:
+                print(f"[tg-paid-bot] today preview callback failed: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                _send_button_failure(api, chat_id=chat_id, label="today's preview")
     elif data == "plans":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="plans_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening plans")
@@ -1975,7 +2047,23 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
     elif data == "sources":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="sources_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening sources")
-        _send_sources(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+        _send_button_progress(
+            api,
+            chat_id=chat_id,
+            text=(
+                "⏳ Working on it.\n"
+                "I am pulling the current shortlist sources now."
+            ),
+        )
+        try:
+            _send_sources(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+        except Exception as e:
+            print(f"[tg-paid-bot] sources callback failed: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            _send_button_failure(api, chat_id=chat_id, label="that sources view")
     elif data.startswith("cover:"):
         lead_id = data.split(":", 1)[1].strip()
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="cover_requested", details={"lead_id": lead_id})
