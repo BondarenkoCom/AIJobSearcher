@@ -107,9 +107,14 @@ def _refresh_loop(
     short_limit: int,
     with_optional: bool,
     interval_hours: float,
+    initial_delay_sec: float,
     stop_event: threading.Event,
 ) -> None:
     interval_sec = max(900.0, float(interval_hours) * 3600.0)
+    if initial_delay_sec > 0:
+        print(f"[bot-stack] waiting {int(initial_delay_sec)}s before first refresh cycle")
+        if stop_event.wait(float(initial_delay_sec)):
+            return
     while not stop_event.is_set():
         for offer in offers:
             if stop_event.is_set():
@@ -155,25 +160,14 @@ def main() -> int:
     if with_optional:
         _prepare_optional_runtime()
 
+    try:
+        initial_delay_sec = float(os.getenv("REMOTE_WORK_HUNTER_BOOT_DELAY_SEC") or "90")
+    except Exception:
+        initial_delay_sec = 90.0
+    initial_delay_sec = max(0.0, initial_delay_sec)
+
     stop_event = threading.Event()
     refresh_thread = None
-    if not args.skip_refresh_loop:
-        refresh_thread = threading.Thread(
-            target=_refresh_loop,
-            kwargs={
-                "offers": offers,
-                "short_limit": args.short_limit,
-                "with_optional": with_optional,
-                "interval_hours": args.refresh_hours,
-                "stop_event": stop_event,
-            },
-            daemon=True,
-        )
-        refresh_thread.start()
-    elif not args.skip_bootstrap:
-        for offer in offers:
-            _run_pipeline(offer, short_limit=args.short_limit, with_optional=with_optional)
-
     bot_cmd = [
         sys.executable,
         str(ROOT / "scripts" / "telegram_paid_bot.py"),
@@ -182,6 +176,23 @@ def main() -> int:
     ]
     print(f"[bot-stack] bot start default_offer={default_offer}")
     proc = subprocess.Popen(bot_cmd, cwd=str(ROOT))
+    if not args.skip_refresh_loop:
+        refresh_thread = threading.Thread(
+            target=_refresh_loop,
+            kwargs={
+                "offers": offers,
+                "short_limit": args.short_limit,
+                "with_optional": with_optional,
+                "interval_hours": args.refresh_hours,
+                "initial_delay_sec": initial_delay_sec,
+                "stop_event": stop_event,
+            },
+            daemon=True,
+        )
+        refresh_thread.start()
+    elif not args.skip_bootstrap:
+        for offer in offers:
+            _run_pipeline(offer, short_limit=args.short_limit, with_optional=with_optional)
     try:
         return int(proc.wait())
     finally:
