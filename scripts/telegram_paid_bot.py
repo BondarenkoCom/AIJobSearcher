@@ -2469,6 +2469,11 @@ def main() -> int:
     api = TelegramBotApi(token=settings.token, timeout_sec=max(15, settings.poll_timeout + 5))
     me = api.get_me()
     print(f"[tg-paid-bot] bot=@{_safe(me.get('username'))} default_offer={settings.default_offer_slug}")
+    try:
+        api.delete_webhook(drop_pending_updates=False)
+        print("[tg-paid-bot] webhook cleared for polling mode")
+    except TelegramApiError as e:
+        print(f"[tg-paid-bot] deleteWebhook skipped: {e}")
 
     conn = db_connect(settings.db_path)
     init_db(conn)
@@ -2501,6 +2506,18 @@ def main() -> int:
                 conn.rollback()
             except Exception:
                 pass
+            err_text = _safe(e).lower()
+            if "409" in err_text or "conflict:" in err_text:
+                print(
+                    "[tg-paid-bot] polling conflict: another bot instance is using the same token. "
+                    "Stop any local/duplicate poller or rotate the token if the conflict persists."
+                )
+                try:
+                    api.delete_webhook(drop_pending_updates=False)
+                except Exception:
+                    pass
+                time.sleep(max(10.0, settings.sleep_sec * 4))
+                continue
             time.sleep(max(3.0, settings.sleep_sec))
         except Exception as e:
             print(f"[tg-paid-bot] error: {e}")

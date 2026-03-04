@@ -35,6 +35,55 @@ def _bool_env(name: str, default: bool) -> bool:
     return raw.lower() in ("1", "true", "yes", "on")
 
 
+def _playwright_browser_root() -> Path:
+    raw = _safe(os.getenv("PLAYWRIGHT_BROWSERS_PATH"))
+    if raw and raw != "0":
+        return Path(raw)
+    return ROOT / "data" / "ms-playwright"
+
+
+def _has_playwright_browser(browser_root: Path, browser_name: str) -> bool:
+    prefixes = {
+        "chromium": ("chromium-",),
+        "firefox": ("firefox-",),
+        "webkit": ("webkit-",),
+    }.get(browser_name, (f"{browser_name}-", browser_name))
+    try:
+        return any(
+            any(child.name.startswith(prefix) for prefix in prefixes)
+            for child in browser_root.iterdir()
+            if child.is_dir()
+        )
+    except Exception:
+        return False
+
+
+def _prepare_optional_runtime() -> None:
+    if not _safe(os.getenv("PLAYWRIGHT_HEADLESS")):
+        os.environ["PLAYWRIGHT_HEADLESS"] = "1"
+
+    browser_root = _playwright_browser_root()
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(browser_root))
+    browser_root.mkdir(parents=True, exist_ok=True)
+
+    if not _bool_env("PLAYWRIGHT_INSTALL_ON_BOOT", True):
+        print("[bot-stack] playwright bootstrap skipped by PLAYWRIGHT_INSTALL_ON_BOOT=0")
+        return
+
+    browser_name = _safe(os.getenv("PLAYWRIGHT_INSTALL_BROWSER")) or "chromium"
+    if _has_playwright_browser(browser_root, browser_name):
+        print(f"[bot-stack] playwright browser already present: {browser_name} @ {browser_root}")
+        return
+
+    cmd = [sys.executable, "-m", "playwright", "install", browser_name]
+    print(f"[bot-stack] installing playwright browser: {' '.join(cmd)}")
+    try:
+        proc = subprocess.run(cmd, cwd=str(ROOT), timeout=1200)
+        print(f"[bot-stack] playwright install rc={proc.returncode}")
+    except Exception as e:
+        print(f"[bot-stack] playwright install failed: {e}")
+
+
 def _run_pipeline(offer_slug: str, short_limit: int, *, with_optional: bool) -> int:
     cmd = [
         sys.executable,
@@ -103,6 +152,8 @@ def main() -> int:
     with_optional = bool(args.with_optional or _bool_env("REMOTE_WORK_HUNTER_WITH_OPTIONAL", True))
     if args.without_optional:
         with_optional = False
+    if with_optional:
+        _prepare_optional_runtime()
 
     stop_event = threading.Event()
     refresh_thread = None
