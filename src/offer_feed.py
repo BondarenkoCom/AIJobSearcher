@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 from pathlib import Path
@@ -10,7 +11,12 @@ from src.offer_profiles import OfferProfile, load_offer_profiles
 
 
 def safe_text(value: Any) -> str:
-    return str(value or "").strip()
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    for _ in range(2):
+        text = html.unescape(text)
+    return text.strip()
 
 
 def parse_json(raw: str) -> Dict[str, Any]:

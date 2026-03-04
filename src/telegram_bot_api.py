@@ -134,3 +134,14 @@ class TelegramBotApi:
     def set_my_short_description(self, short_description: str) -> bool:
         payload = {"short_description": short_description[:120]}
         return bool(self._call("setMyShortDescription", payload).get("result"))
+
+    def get_file(self, *, file_id: str) -> Dict[str, Any]:
+        payload = {"file_id": file_id}
+        return self._call("getFile", payload).get("result") or {}
+
+    def download_file_bytes(self, *, file_path: str) -> bytes:
+        url = f"https://api.telegram.org/file/bot{self.token}/{file_path.lstrip('/')}"
+        resp = self.session.get(url, timeout=self.timeout_sec)
+        if not resp.ok:
+            raise TelegramApiError(f"download_file_bytes failed: HTTP {resp.status_code}")
+        return resp.content

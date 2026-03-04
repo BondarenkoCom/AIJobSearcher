@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Set
+
+from pypdf import PdfReader
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -502,6 +505,43 @@ def _get_apply_assistant() -> ApplyAssistant:
     if _APPLY_ASSISTANT is None:
         _APPLY_ASSISTANT = ApplyAssistant()
     return _APPLY_ASSISTANT
+
+
+def _extract_resume_text_from_pdf_bytes(data: bytes) -> str:
+    reader = PdfReader(io.BytesIO(data))
+    parts: List[str] = []
+    for page in reader.pages:
+        try:
+            parts.append(page.extract_text() or "")
+        except Exception:
+            continue
+    return "\n".join([_safe(p) for p in parts if _safe(p)]).strip()
+
+
+def _extract_resume_text_from_document(api: TelegramBotApi, *, document: Dict[str, Any]) -> str:
+    file_id = _safe(document.get("file_id"))
+    file_name = _safe(document.get("file_name")).lower()
+    mime_type = _safe(document.get("mime_type")).lower()
+    if not file_id:
+        raise RuntimeError("Missing Telegram file id.")
+    file_meta = api.get_file(file_id=file_id)
+    file_path = _safe(file_meta.get("file_path"))
+    if not file_path:
+        raise RuntimeError("Telegram did not return a file path.")
+    raw = api.download_file_bytes(file_path=file_path)
+    if not raw:
+        raise RuntimeError("Downloaded file is empty.")
+    if mime_type == "application/pdf" or file_name.endswith(".pdf"):
+        text = _extract_resume_text_from_pdf_bytes(raw)
+        if not text:
+            raise RuntimeError("Could not extract text from PDF.")
+        return text
+    if mime_type.startswith("text/") or file_name.endswith(".txt") or file_name.endswith(".md"):
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw.decode("latin-1", errors="ignore")
+    raise RuntimeError("Only PDF, TXT, and MD resume files are supported in this MVP.")
 
 
 def _row_matches_stack(row: Dict[str, Any], *, stack_option: Dict[str, Any]) -> bool:
@@ -1214,6 +1254,7 @@ def _handle_successful_payment(api: TelegramBotApi, conn, settings: BotSettings,
     offer = _resolve_offer(settings, _safe(payload.get("offer")) or settings.default_offer_slug)
     user = dict(message.get("from") or {})
     chat = dict(message.get("chat") or {})
+    document = dict(message.get("document") or {})
     user_id = int(user.get("id") or 0)
     chat_id = int(chat.get("id") or 0)
     username = _safe(user.get("username"))
@@ -1498,7 +1539,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         ),
     )
     current_offer = _current_offer(conn, settings, user_id=user_id)
-    text = _safe(message.get("text"))
+    text = _safe(message.get("text") or message.get("caption"))
     command = _parse_command(text)
     session = _resume_session(user_id)
 
@@ -1527,10 +1568,44 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         )
         conn.commit()
         return
-    if session.awaiting_text and message.get("document"):
+    if session.awaiting_text and document:
         api.send_message(
             chat_id=chat_id,
-            text="For now, send resume text directly in chat after /cv. File upload parsing is not enabled in this MVP.",
+            text=(
+                "Resume file received.\n"
+                "Reading it now. I will keep it only in temporary bot memory, not in our DB or long-term files."
+            ),
+        )
+        try:
+            resume_text = _extract_resume_text_from_document(api, document=document)
+        except Exception as exc:
+            api.send_message(
+                chat_id=chat_id,
+                text=f"I could not read this resume file: {_safe(exc)}",
+            )
+            conn.commit()
+            return
+        _store_transient_resume(user_id=user_id, resume_text=resume_text)
+        _track_event(
+            conn,
+            user_id=user_id,
+            chat_id=chat_id,
+            offer_slug=current_offer.slug,
+            event_type="resume_loaded",
+            details={"chars": len(_current_resume_text(user_id=user_id)), "kind": "document"},
+        )
+        api.send_message(
+            chat_id=chat_id,
+            text=(
+                "Resume accepted and parsed.\n"
+                "It is now loaded in temporary bot memory only.\n"
+                "Now run /apply 1 after /today, or /forgetcv to clear it."
+            ),
+            reply_markup=_main_menu_keyboard(
+                settings,
+                offer=current_offer,
+                has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug),
+            ),
         )
         conn.commit()
         return
@@ -1598,7 +1673,38 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             )
     elif command == "/cv":
         body = _command_arg(text)
-        if body:
+        if document:
+            api.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Resume file received.\n"
+                    "Reading it now. I will keep it only in temporary bot memory, not in our DB or long-term files."
+                ),
+            )
+            try:
+                resume_text = _extract_resume_text_from_document(api, document=document)
+            except Exception as exc:
+                api.send_message(chat_id=chat_id, text=f"I could not read this resume file: {_safe(exc)}")
+                conn.commit()
+                return
+            _store_transient_resume(user_id=user_id, resume_text=resume_text)
+            _track_event(
+                conn,
+                user_id=user_id,
+                chat_id=chat_id,
+                offer_slug=current_offer.slug,
+                event_type="resume_loaded",
+                details={"chars": len(_current_resume_text(user_id=user_id)), "kind": "document"},
+            )
+            api.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Resume accepted and parsed.\n"
+                    "It is now loaded in temporary bot memory only.\n"
+                    "Now run /apply 1 after /today, or /forgetcv to clear it."
+                ),
+            )
+        elif body:
             _store_transient_resume(user_id=user_id, resume_text=body)
             _track_event(
                 conn,
