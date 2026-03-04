@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List
 
 from src.activity_db import connect as db_connect, init_db
+from src.apply_assistant import ApplyAssistant, ApplyAssistantError
 from src.offer_profiles import OfferProfile, load_offer_profiles
+from src.telegram_paid_store import log_llm_usage
+
+
+_LEAD_READER: ApplyAssistant | None = None
+_LEAD_READ_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def safe_text(value: Any) -> str:
@@ -25,6 +33,114 @@ def parse_json(raw: str) -> Dict[str, Any]:
         return out if isinstance(out, dict) else {}
     except Exception:
         return {}
+
+
+def _lead_reader_enabled() -> bool:
+    raw = safe_text(os.getenv("ENABLE_AI_LEAD_READER") or "1").lower()
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return bool(safe_text(os.getenv("XAI_API_KEY")) or safe_text(os.getenv("OPENAI_API_KEY")))
+
+
+def _get_lead_reader() -> ApplyAssistant:
+    global _LEAD_READER
+    if _LEAD_READER is None:
+        _LEAD_READER = ApplyAssistant()
+    return _LEAD_READER
+
+
+def _lead_read_cache_key(row: Dict[str, Any], raw: Dict[str, Any]) -> str:
+    payload = "|".join(
+        [
+            safe_text(row.get("lead_id")),
+            safe_text(row.get("job_title")),
+            safe_text(row.get("company")),
+            safe_text(row.get("location")),
+            safe_text(row.get("url")),
+            json.dumps(raw or {}, ensure_ascii=False, sort_keys=True),
+        ]
+    )
+    return hashlib.sha1(payload.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _needs_ai_read(row: Dict[str, Any], raw: Dict[str, Any]) -> bool:
+    title = safe_text(row.get("job_title"))
+    company = safe_text(row.get("company"))
+    location = safe_text(row.get("location"))
+    text = compose_offer_text(row, raw)
+    if not raw:
+        return False
+    if not title:
+        return True
+    if len(text) < 50:
+        return True
+    if not company and any(safe_text(raw.get(k)) for k in ("company", "employer", "organization", "client")):
+        return True
+    if not location and any(safe_text(raw.get(k)) for k in ("location", "country", "city", "remote")):
+        return True
+    return False
+
+
+def _prefer_value(existing: str, proposed: str) -> str:
+    existing = safe_text(existing)
+    proposed = safe_text(proposed)
+    if not proposed:
+        return existing
+    if not existing:
+        return proposed
+    if len(existing) < 4 and len(proposed) > len(existing):
+        return proposed
+    return existing
+
+
+def _augment_row_with_ai(conn, *, row: Dict[str, Any], raw: Dict[str, Any], offer: OfferProfile) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    if not _lead_reader_enabled():
+        return dict(row), dict(raw)
+    if not _needs_ai_read(row, raw):
+        return dict(row), dict(raw)
+    cache_key = _lead_read_cache_key(row, raw)
+    cached = _LEAD_READ_CACHE.get(cache_key)
+    if cached is not None:
+        row_copy = dict(row)
+        raw_copy = dict(raw)
+        row_copy["job_title"] = _prefer_value(row_copy.get("job_title"), cached.get("title"))
+        row_copy["company"] = _prefer_value(row_copy.get("company"), cached.get("company"))
+        row_copy["location"] = _prefer_value(row_copy.get("location"), cached.get("location"))
+        if not safe_text(raw_copy.get("snippet")) and safe_text(cached.get("snippet")):
+            raw_copy["snippet"] = safe_text(cached.get("snippet"))
+        return row_copy, raw_copy
+    try:
+        result = _get_lead_reader().read_lead_fields(existing_row=row, raw=raw)
+    except ApplyAssistantError:
+        return dict(row), dict(raw)
+    _LEAD_READ_CACHE[cache_key] = {
+        "title": result.title,
+        "company": result.company,
+        "location": result.location,
+        "snippet": result.snippet,
+    }
+    log_llm_usage(
+        conn,
+        user_id=0,
+        offer_slug=offer.slug,
+        lead_id=safe_text(row.get("lead_id")),
+        provider=result.usage.provider,
+        model=result.usage.model,
+        task_type="lead_read",
+        prompt_tokens=result.usage.prompt_tokens,
+        completion_tokens=result.usage.completion_tokens,
+        total_tokens=result.usage.total_tokens,
+        estimated_cost_usd=result.usage.estimated_cost_usd,
+        details={"source": safe_text(row.get("source")), "platform": safe_text(row.get("platform"))},
+    )
+    row_copy = dict(row)
+    raw_copy = dict(raw)
+    row_copy["job_title"] = _prefer_value(row_copy.get("job_title"), result.title)
+    row_copy["company"] = _prefer_value(row_copy.get("company"), result.company)
+    row_copy["location"] = _prefer_value(row_copy.get("location"), result.location)
+    if not safe_text(raw_copy.get("snippet")) and safe_text(result.snippet):
+        raw_copy["snippet"] = safe_text(result.snippet)
+    return row_copy, raw_copy
 
 
 def compose_offer_text(row: Dict[str, Any], raw: Dict[str, Any]) -> str:
@@ -137,6 +253,7 @@ def get_offer_row_by_lead_id(conn, *, offer: OfferProfile, lead_id: str) -> Dict
         return {}
     raw = parse_json(safe_text(row["raw_json"]))
     row_dict = dict(row)
+    row_dict, raw = _augment_row_with_ai(conn, row=row_dict, raw=raw, offer=offer)
     if not matches_offer(row_dict, raw, offer):
         return {}
     text = compose_offer_text(row_dict, raw)
@@ -163,6 +280,8 @@ def build_offer_rows(conn, *, offer: OfferProfile, scan_limit: int, limit: int) 
     seen = set()
     for row in rows:
         raw = parse_json(safe_text(row.get("raw_json")))
+        row = dict(row)
+        row, raw = _augment_row_with_ai(conn, row=row, raw=raw, offer=offer)
         if not matches_offer(row, raw, offer):
             continue
         dedupe_key = (safe_text(row.get("url")).lower(), safe_text(row.get("job_title")).lower())

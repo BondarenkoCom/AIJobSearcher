@@ -28,7 +28,14 @@ def _split_csv(raw: str) -> List[str]:
     return out
 
 
-def _run_pipeline(offer_slug: str, short_limit: int) -> int:
+def _bool_env(name: str, default: bool) -> bool:
+    raw = _safe(os.getenv(name))
+    if not raw:
+        return bool(default)
+    return raw.lower() in ("1", "true", "yes", "on")
+
+
+def _run_pipeline(offer_slug: str, short_limit: int, *, with_optional: bool) -> int:
     cmd = [
         sys.executable,
         str(ROOT / "scripts" / "run_offer_pipeline.py"),
@@ -37,20 +44,29 @@ def _run_pipeline(offer_slug: str, short_limit: int) -> int:
         "--short-limit",
         str(max(1, int(short_limit))),
     ]
-    print(f"[bot-stack] pipeline start offer={offer_slug}")
+    if with_optional:
+        cmd.append("--with-optional")
+    print(f"[bot-stack] pipeline start offer={offer_slug} with_optional={with_optional}")
     proc = subprocess.run(cmd, cwd=str(ROOT))
     print(f"[bot-stack] pipeline done offer={offer_slug} rc={proc.returncode}")
     return int(proc.returncode)
 
 
-def _refresh_loop(*, offers: List[str], short_limit: int, interval_hours: float, stop_event: threading.Event) -> None:
+def _refresh_loop(
+    *,
+    offers: List[str],
+    short_limit: int,
+    with_optional: bool,
+    interval_hours: float,
+    stop_event: threading.Event,
+) -> None:
     interval_sec = max(900.0, float(interval_hours) * 3600.0)
     while not stop_event.is_set():
         for offer in offers:
             if stop_event.is_set():
                 return
             try:
-                _run_pipeline(offer, short_limit=short_limit)
+                _run_pipeline(offer, short_limit=short_limit, with_optional=with_optional)
             except Exception as e:
                 print(f"[bot-stack] pipeline error offer={offer}: {e}")
         if stop_event.wait(interval_sec):
@@ -65,6 +81,8 @@ def main() -> int:
     ap.add_argument("--refresh-hours", type=float, default=6.0)
     ap.add_argument("--skip-bootstrap", action="store_true")
     ap.add_argument("--skip-refresh-loop", action="store_true")
+    ap.add_argument("--with-optional", action="store_true", help="Run optional scanners that need extra sessions/deps.")
+    ap.add_argument("--without-optional", action="store_true", help="Force-disable optional scanners.")
     args = ap.parse_args()
 
     load_env_file(ROOT / ".env.accounts")
@@ -82,6 +100,9 @@ def main() -> int:
         ]
     if default_offer not in offers:
         offers.insert(0, default_offer)
+    with_optional = bool(args.with_optional or _bool_env("REMOTE_WORK_HUNTER_WITH_OPTIONAL", True))
+    if args.without_optional:
+        with_optional = False
 
     stop_event = threading.Event()
     refresh_thread = None
@@ -91,6 +112,7 @@ def main() -> int:
             kwargs={
                 "offers": offers,
                 "short_limit": args.short_limit,
+                "with_optional": with_optional,
                 "interval_hours": args.refresh_hours,
                 "stop_event": stop_event,
             },
@@ -99,7 +121,7 @@ def main() -> int:
         refresh_thread.start()
     elif not args.skip_bootstrap:
         for offer in offers:
-            _run_pipeline(offer, short_limit=args.short_limit)
+            _run_pipeline(offer, short_limit=args.short_limit, with_optional=with_optional)
 
     bot_cmd = [
         sys.executable,

@@ -142,6 +142,15 @@ class CoverLetter:
     usage: LlmUsage
 
 
+@dataclass
+class LeadReadResult:
+    title: str
+    company: str
+    location: str
+    snippet: str
+    usage: LlmUsage
+
+
 class OpenAICompatibleClient:
     def __init__(self, *, provider: str, api_key: str, api_base: str, model: str, timeout_sec: int = 45) -> None:
         self.provider = _safe(provider) or "unknown"
@@ -214,6 +223,76 @@ class ApplyAssistant:
             api_base="https://api.openai.com/v1",
             model=_safe(os.getenv("APPLY_COVER_MODEL")) or "gpt-4.1-mini",
         )
+
+    def _read_lead_fields_with(
+        self,
+        client: OpenAICompatibleClient,
+        *,
+        existing_row: Dict[str, Any],
+        raw: Dict[str, Any],
+    ) -> LeadReadResult:
+        existing_payload = {
+            "title": _safe(existing_row.get("job_title") or existing_row.get("title")),
+            "company": _safe(existing_row.get("company")),
+            "location": _safe(existing_row.get("location")),
+            "platform": _safe(existing_row.get("platform")),
+            "lead_type": _safe(existing_row.get("lead_type")),
+            "source": _safe(existing_row.get("source")),
+            "url": _safe(existing_row.get("url")),
+        }
+        raw_payload = _trim(json.dumps(raw or {}, ensure_ascii=False), 7000)
+        system = (
+            "You extract structured job lead fields from messy source data. "
+            "Return JSON only. Be conservative and do not invent companies, titles, or locations."
+        )
+        user = (
+            "Return JSON with keys: title, company, location, snippet.\n"
+            "Rules:\n"
+            "- Prefer existing fields if they already look valid\n"
+            "- Fill only the best-supported values from the raw source payload\n"
+            "- snippet must be one concise summary sentence, max 220 characters\n"
+            "- use empty string if a field is unknown\n"
+            f"\nExisting row:\n{json.dumps(existing_payload, ensure_ascii=False)}\n"
+            f"\nRaw source payload:\n{raw_payload}"
+        )
+        content, usage = client.chat(
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.0,
+            max_tokens=260,
+            want_json=True,
+        )
+        data = _extract_json(content)
+        return LeadReadResult(
+            title=_trim(_safe(data.get("title")), 200),
+            company=_trim(_safe(data.get("company")), 140),
+            location=_trim(_safe(data.get("location")), 140),
+            snippet=_trim(_safe(data.get("snippet")), 220),
+            usage=usage,
+        )
+
+    def read_lead_fields(
+        self,
+        *,
+        existing_row: Dict[str, Any],
+        raw: Dict[str, Any],
+    ) -> LeadReadResult:
+        primary_error: Exception | None = None
+        try:
+            result = self._read_lead_fields_with(self.analyzer, existing_row=existing_row, raw=raw)
+            if any((_safe(result.title), _safe(result.company), _safe(result.location), _safe(result.snippet))):
+                return result
+        except Exception as exc:
+            primary_error = exc
+        try:
+            result = self._read_lead_fields_with(self.cover, existing_row=existing_row, raw=raw)
+            if any((_safe(result.title), _safe(result.company), _safe(result.location), _safe(result.snippet))):
+                return result
+        except Exception as exc:
+            if primary_error is None:
+                primary_error = exc
+        if primary_error is not None:
+            raise ApplyAssistantError(f"lead reader failed: {primary_error}") from primary_error
+        raise ApplyAssistantError("lead reader returned no usable fields")
 
     def analyze_job(
         self,
