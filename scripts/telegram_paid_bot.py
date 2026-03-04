@@ -97,7 +97,10 @@ def _display_name(*, username: str = "", first_name: str = "") -> str:
 
 
 def _parse_command(text: str) -> str:
-    cmd = _safe(text).split()[0].strip()
+    parts = _safe(text).split()
+    if not parts:
+        return ""
+    cmd = parts[0].strip()
     if "@" in cmd:
         cmd = cmd.split("@", 1)[0]
     return cmd.lower()
@@ -637,6 +640,19 @@ def _extract_resume_text_from_document(api: TelegramBotApi, *, document: Dict[st
         except UnicodeDecodeError:
             return raw.decode("latin-1", errors="ignore")
     raise RuntimeError("Only PDF, TXT, and MD resume files are supported in this MVP.")
+
+
+def _looks_like_resume_document(document: Dict[str, Any]) -> bool:
+    file_name = _safe(document.get("file_name")).lower()
+    mime_type = _safe(document.get("mime_type")).lower()
+    if not file_name and not mime_type:
+        return False
+    if not (file_name.endswith((".pdf", ".txt", ".md")) or mime_type in ("application/pdf", "text/plain", "text/markdown")):
+        return False
+    markers = ("cv", "resume", "curriculum", "bondarenko")
+    if any(marker in file_name for marker in markers):
+        return True
+    return not file_name and mime_type == "application/pdf"
 
 
 def _row_matches_stack(row: Dict[str, Any], *, stack_option: Dict[str, Any]) -> bool:
@@ -1686,6 +1702,9 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     text = _safe(message.get("text") or message.get("caption"))
     command = _parse_command(text)
     session = _resume_session(user_id)
+    resume_document = bool(document) and (
+        session.awaiting_text or (_looks_like_resume_document(document) and not command)
+    )
 
     if session.awaiting_text and text and not command:
         _store_transient_resume(user_id=user_id, resume_text=text)
@@ -1712,7 +1731,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         )
         conn.commit()
         return
-    if session.awaiting_text and document:
+    if resume_document:
         api.send_message(
             chat_id=chat_id,
             text=(
@@ -1904,6 +1923,21 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     elif command in ("/support", "/paysupport"):
         api.send_message(chat_id=chat_id, text=_build_support_text(settings))
     else:
+        if document:
+            api.send_message(
+                chat_id=chat_id,
+                text=(
+                    "I received a file, but I do not know what to do with it yet.\n"
+                    "Tap CV first, then send a PDF, TXT, or MD resume, or upload a file with cv/resume in its name."
+                ),
+                reply_markup=_main_menu_keyboard(
+                    settings,
+                    offer=current_offer,
+                    has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug),
+                ),
+            )
+            conn.commit()
+            return
         api.send_message(
             chat_id=chat_id,
             text="Unknown command. Try /choose, /stack, /sources, /today, /apply, /cv, /forgetcv, /plans, /status, /terms, or /support.",
