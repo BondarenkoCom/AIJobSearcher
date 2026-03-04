@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import os
 import re
@@ -71,6 +72,8 @@ class ResumeSession:
 _RESUME_TTL_SEC = 2 * 60 * 60
 _RESUME_SESSIONS: Dict[int, ResumeSession] = {}
 _APPLY_ASSISTANT: ApplyAssistant | None = None
+_AI_SCORE_TTL_SEC = 2 * 60 * 60
+_AI_SCORE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def _int_env(name: str, default: int) -> int:
@@ -412,16 +415,24 @@ def _why_selected(row: Dict[str, Any]) -> str:
     return ", ".join(why[:4])
 
 
-def _format_card(row: Dict[str, Any], *, index: int) -> str:
+def _format_card(
+    row: Dict[str, Any],
+    *,
+    index: int,
+    has_access: bool,
+    resume_loaded: bool,
+) -> str:
     stack_hits = [str(x).strip() for x in row.get("stack_hits") or [] if str(x).strip()]
     lines = [
         f"{index}. {_safe(row.get('title'))}",
         f"Platform: {_safe(row.get('platform')) or '-'}",
         f"Type: {_safe(row.get('lead_type')) or '-'}",
         f"Location: {_safe(row.get('location')) or 'Remote/unspecified'}",
+        f"Collected: {_collected_date_label(row.get('created_at'))}",
         f"Contact: {_safe(row.get('contact_method')) or '-'}",
-        f"Score: {_safe(row.get('score')) or '-'}",
     ]
+    if has_access and resume_loaded:
+        lines.append(f"Score: {_safe(row.get('display_score')) or '-'}")
     if stack_hits:
         lines.append(f"Stack: {', '.join(stack_hits[:6])}")
     lines.extend(
@@ -430,6 +441,13 @@ def _format_card(row: Dict[str, Any], *, index: int) -> str:
         f"Link: {_safe(row.get('url'))}",
         ]
     )
+    if has_access:
+        if resume_loaded:
+            lines.append(f"Apply analysis: /apply {index}")
+        else:
+            lines.append("Apply analysis: upload your CV first with /cv")
+    else:
+        lines.append("Apply analysis: paid feature")
     return "\n".join(lines)
 
 
@@ -672,6 +690,70 @@ def _format_cover_body(text: str) -> str:
     return "\n\n".join(chunks)
 
 
+def _resume_fingerprint(resume_text: str) -> str:
+    value = _safe(resume_text)
+    if not value:
+        return "no_cv"
+    return hashlib.sha1(value.encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
+def _analysis_cache_key(*, user_id: int, offer_slug: str, lead_id: str, stack_label: str, resume_text: str) -> str:
+    return "|".join(
+        [
+            str(int(user_id or 0)),
+            _safe(offer_slug),
+            _safe(lead_id),
+            _safe(stack_label),
+            _resume_fingerprint(resume_text),
+        ]
+    )
+
+
+def _analysis_cache_get(*, user_id: int, offer_slug: str, lead_id: str, stack_label: str, resume_text: str) -> Dict[str, Any] | None:
+    key = _analysis_cache_key(
+        user_id=user_id,
+        offer_slug=offer_slug,
+        lead_id=lead_id,
+        stack_label=stack_label,
+        resume_text=resume_text,
+    )
+    item = _AI_SCORE_CACHE.get(key) or {}
+    ts = float(item.get("ts") or 0.0)
+    if not ts or (time.time() - ts) > _AI_SCORE_TTL_SEC:
+        _AI_SCORE_CACHE.pop(key, None)
+        return None
+    return dict(item)
+
+
+def _analysis_cache_put(
+    *,
+    user_id: int,
+    offer_slug: str,
+    lead_id: str,
+    stack_label: str,
+    resume_text: str,
+    analysis: Dict[str, Any],
+) -> None:
+    key = _analysis_cache_key(
+        user_id=user_id,
+        offer_slug=offer_slug,
+        lead_id=lead_id,
+        stack_label=stack_label,
+        resume_text=resume_text,
+    )
+    _AI_SCORE_CACHE[key] = {
+        "ts": time.time(),
+        "analysis": dict(analysis),
+    }
+
+
+def _collected_date_label(value: Any) -> str:
+    raw = _safe(value)
+    if not raw:
+        return "-"
+    return raw.split("T", 1)[0]
+
+
 def _row_matches_stack(row: Dict[str, Any], *, stack_option: Dict[str, Any]) -> bool:
     tokens = [str(x).strip().lower() for x in stack_option.get("match_any") or [] if str(x).strip()]
     if not tokens:
@@ -716,12 +798,26 @@ def _apply_stack_preference(
     return chosen[: max(1, int(limit))], len(matched), broadened
 
 
-def _chunk_text(rows: List[Dict[str, Any]], *, chunk_size: int) -> List[str]:
+def _chunk_text(
+    rows: List[Dict[str, Any]],
+    *,
+    chunk_size: int,
+    has_access: bool,
+    resume_loaded: bool,
+) -> List[str]:
     out: List[str] = []
     size = max(1, int(chunk_size))
     for start in range(0, len(rows), size):
         block = rows[start:start + size]
-        parts = [_format_card(row, index=start + idx + 1) for idx, row in enumerate(block)]
+        parts = [
+            _format_card(
+                row,
+                index=start + idx + 1,
+                has_access=has_access,
+                resume_loaded=resume_loaded,
+            )
+            for idx, row in enumerate(block)
+        ]
         out.append("\n\n".join(parts))
     return out
 
@@ -1036,6 +1132,9 @@ def _send_feed(
         limit=limit,
         delivery_kind=delivery_kind,
     )
+    has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug)
+    resume_text = _current_resume_text(user_id=user_id)
+    resume_loaded = bool(resume_text)
     if not rows:
         msg = api.send_message(
             chat_id=chat_id,
@@ -1053,6 +1152,35 @@ def _send_feed(
         )
         return
 
+    if has_access and resume_loaded and _assistant_ready():
+        stack_label = _selected_stack_label(conn, user_id=user_id, offer=offer)
+        api.send_chat_action(chat_id=chat_id, action="typing")
+        api.send_message(
+            chat_id=chat_id,
+            text=(
+                "⏳ Building your scored shortlist.\n"
+                "I am matching these leads against your current stack and temporary CV."
+            ),
+        )
+        scored_rows: List[Dict[str, Any]] = []
+        for row in rows:
+            row_copy = dict(row)
+            try:
+                analysis, _ = _get_cached_or_fresh_analysis(
+                    conn,
+                    offer=offer,
+                    user_id=user_id,
+                    lead=row_copy,
+                    stack_label=stack_label,
+                    resume_text=resume_text,
+                    task_type="shortlist_score",
+                )
+                row_copy["display_score"] = int(analysis.get("match_score") or 0)
+            except ApplyAssistantError:
+                row_copy["display_score"] = ""
+            scored_rows.append(row_copy)
+        rows = scored_rows
+
     header = (
         f"{_offer_title(offer)}\n"
         f"Leads in this drop: {len(rows)}\n"
@@ -1066,7 +1194,6 @@ def _send_feed(
             header += f"\nStack focus: {stack_label} ({matched_count} exact hits, rest broadened)"
         else:
             header += f"\nStack focus: {stack_label}"
-    has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug)
     first = api.send_message(
         chat_id=chat_id,
         text=header,
@@ -1074,15 +1201,21 @@ def _send_feed(
     )
     sent = 1
     chunk_size = 3 if delivery_kind == "preview" else 4
-    for chunk in _chunk_text(rows, chunk_size=chunk_size):
+    for chunk in _chunk_text(rows, chunk_size=chunk_size, has_access=has_access, resume_loaded=resume_loaded):
         api.send_message(chat_id=chat_id, text=chunk)
         sent += 1
-    if has_access:
+    if has_access and resume_loaded:
         tip_lines = [
             "🎯 Apply Assistant",
             f"• Use /apply 1..{len(rows)} to analyze a lead from this shortlist",
             "• Use /cv to load a temporary CV for tailored cover notes",
             "• Use /forgetcv to wipe that temporary CV from bot memory",
+        ]
+    elif has_access:
+        tip_lines = [
+            "🎯 Apply Assistant",
+            "• Upload your CV first with /cv to unlock real AI match scores",
+            "• After that, each lead will show a scored fit and /apply command",
         ]
     else:
         tip_lines = [
@@ -1224,6 +1357,95 @@ def _apply_keyboard(*, lead: Dict[str, Any]) -> Dict[str, Any]:
     return {"inline_keyboard": rows}
 
 
+def _send_cv_required(
+    api: TelegramBotApi,
+    conn,
+    settings: BotSettings,
+    *,
+    offer: OfferProfile,
+    user_id: int,
+    username: str,
+    first_name: str,
+    chat_id: int,
+    reason: str,
+) -> None:
+    session = _resume_session(user_id)
+    session.awaiting_text = True
+    session.updated_at_ts = time.time()
+    api.send_message(
+        chat_id=chat_id,
+        text=(
+            f"{reason}\n"
+            "Send your CV now as text, PDF, TXT, or MD.\n"
+            "I will keep it only in temporary bot memory, not in our DB or long-term files."
+        ),
+        reply_markup=_main_menu_keyboard(
+            settings,
+            offer=offer,
+            has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug),
+        ),
+    )
+
+
+def _get_cached_or_fresh_analysis(
+    conn,
+    *,
+    offer: OfferProfile,
+    user_id: int,
+    lead: Dict[str, Any],
+    stack_label: str,
+    resume_text: str,
+    task_type: str,
+) -> tuple[Dict[str, Any], bool]:
+    lead_id = _safe(lead.get("lead_id"))
+    cached = _analysis_cache_get(
+        user_id=user_id,
+        offer_slug=offer.slug,
+        lead_id=lead_id,
+        stack_label=stack_label,
+        resume_text=resume_text,
+    )
+    if cached:
+        return dict(cached.get("analysis") or {}), True
+    assistant = _get_apply_assistant()
+    result = assistant.analyze_job(
+        offer_title=_offer_title(offer),
+        stack_label=stack_label,
+        lead=lead,
+        resume_text=resume_text,
+    )
+    analysis = {
+        "match_score": int(result.match_score or 0),
+        "strengths": list(result.strengths or []),
+        "weaknesses": list(result.weaknesses or []),
+        "pitch": _safe(result.pitch),
+        "salary_hint": _safe(result.salary_hint),
+    }
+    _analysis_cache_put(
+        user_id=user_id,
+        offer_slug=offer.slug,
+        lead_id=lead_id,
+        stack_label=stack_label,
+        resume_text=resume_text,
+        analysis=analysis,
+    )
+    log_llm_usage(
+        conn,
+        user_id=user_id,
+        offer_slug=offer.slug,
+        lead_id=lead_id,
+        provider=result.usage.provider,
+        model=result.usage.model,
+        task_type=task_type,
+        prompt_tokens=result.usage.prompt_tokens,
+        completion_tokens=result.usage.completion_tokens,
+        total_tokens=result.usage.total_tokens,
+        estimated_cost_usd=result.usage.estimated_cost_usd,
+        details={"resume_loaded": bool(resume_text)},
+    )
+    return analysis, False
+
+
 def _format_apply_analysis(
     *,
     offer: OfferProfile,
@@ -1311,8 +1533,29 @@ def _send_apply_package(
     if not _assistant_ready():
         api.send_message(chat_id=chat_id, text="Apply Assistant is not configured yet.")
         return
-    assistant = _get_apply_assistant()
     resume_text = _current_resume_text(user_id=user_id)
+    if not resume_text:
+        _track_event(
+            conn,
+            user_id=user_id,
+            chat_id=chat_id,
+            offer_slug=offer.slug,
+            event_type="cv_required_for_ai",
+            details={"origin": "apply", "lead_index": int(lead_index)},
+        )
+        _send_cv_required(
+            api,
+            conn,
+            settings,
+            offer=offer,
+            user_id=user_id,
+            username=username,
+            first_name="",
+            chat_id=chat_id,
+            reason="Upload your CV first so I can give you a real AI match score for this lead.",
+        )
+        return
+    stack_label = _selected_stack_label(conn, user_id=user_id, offer=offer)
     api.send_chat_action(chat_id=chat_id, action="typing")
     api.send_message(
         chat_id=chat_id,
@@ -1322,29 +1565,18 @@ def _send_apply_package(
         ),
     )
     try:
-        analysis = assistant.analyze_job(
-            offer_title=_offer_title(offer),
-            stack_label=_selected_stack_label(conn, user_id=user_id, offer=offer),
+        analysis, _ = _get_cached_or_fresh_analysis(
+            conn,
+            offer=offer,
+            user_id=user_id,
             lead=lead,
             resume_text=resume_text,
+            stack_label=stack_label,
+            task_type="analyze",
         )
     except ApplyAssistantError as exc:
         api.send_message(chat_id=chat_id, text=f"Apply Assistant error: {_safe(exc)}")
         return
-    log_llm_usage(
-        conn,
-        user_id=user_id,
-        offer_slug=offer.slug,
-        lead_id=_safe(lead.get("lead_id")),
-        provider=analysis.usage.provider,
-        model=analysis.usage.model,
-        task_type="analyze",
-        prompt_tokens=analysis.usage.prompt_tokens,
-        completion_tokens=analysis.usage.completion_tokens,
-        total_tokens=analysis.usage.total_tokens,
-        estimated_cost_usd=analysis.usage.estimated_cost_usd,
-        details={"resume_loaded": bool(resume_text)},
-    )
     _track_event(
         conn,
         user_id=user_id,
@@ -1357,16 +1589,10 @@ def _send_apply_package(
         chat_id=chat_id,
         text=_format_apply_analysis(
             offer=offer,
-            stack_label=_selected_stack_label(conn, user_id=user_id, offer=offer),
+            stack_label=stack_label,
             lead_index=lead_index,
             lead=lead,
-            analysis={
-                "match_score": analysis.match_score,
-                "strengths": analysis.strengths,
-                "weaknesses": analysis.weaknesses,
-                "pitch": analysis.pitch,
-                "salary_hint": analysis.salary_hint,
-            },
+            analysis=analysis,
             resume_loaded=bool(resume_text),
         ),
         reply_markup=_apply_keyboard(lead=lead),
@@ -1410,6 +1636,27 @@ def _send_cover_for_lead(
         return
     assistant = _get_apply_assistant()
     resume_text = _current_resume_text(user_id=user_id)
+    if not resume_text:
+        _track_event(
+            conn,
+            user_id=user_id,
+            chat_id=chat_id,
+            offer_slug=offer.slug,
+            event_type="cv_required_for_ai",
+            details={"origin": "cover", "lead_id": lead_id},
+        )
+        _send_cv_required(
+            api,
+            conn,
+            settings,
+            offer=offer,
+            user_id=user_id,
+            username=username,
+            first_name="",
+            chat_id=chat_id,
+            reason="Upload your CV first so I can generate a tailored cover note for this lead.",
+        )
+        return
     api.send_chat_action(chat_id=chat_id, action="typing")
     api.send_message(
         chat_id=chat_id,
