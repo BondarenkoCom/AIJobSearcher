@@ -10,6 +10,18 @@ class TelegramApiError(RuntimeError):
     pass
 
 
+def _callback_query_is_expired(error: BaseException) -> bool:
+    text = str(error or "").lower()
+    return (
+        "answercallbackquery failed" in text
+        and (
+            "query is too old" in text
+            or "response timeout expired" in text
+            or "query id is invalid" in text
+        )
+    )
+
+
 @dataclass
 class TelegramBotApi:
     token: str
@@ -79,14 +91,20 @@ class TelegramBotApi:
         callback_query_id: str,
         text: str = "",
         show_alert: bool = False,
-    ) -> None:
+    ) -> bool:
         payload: Dict[str, Any] = {
             "callback_query_id": callback_query_id,
             "show_alert": bool(show_alert),
         }
         if text:
             payload["text"] = text
-        self._call("answerCallbackQuery", payload)
+        try:
+            self._call("answerCallbackQuery", payload)
+            return True
+        except TelegramApiError as e:
+            if _callback_query_is_expired(e):
+                return False
+            raise
 
     def answer_pre_checkout_query(
         self,

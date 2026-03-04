@@ -6,6 +6,17 @@ import requests
 from ..models import Job
 
 
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/133.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
 def _get_by_path(obj: Any, path: Optional[Any]) -> Any:
     if not path:
         return None
@@ -88,7 +99,8 @@ def collect_from_http_json(cfg: Dict[str, Any]) -> List[Job]:
 
     method = str(cfg.get("method") or "GET").upper()
     params = cfg.get("params") or {}
-    headers = cfg.get("headers") or {}
+    headers = dict(DEFAULT_HEADERS)
+    headers.update(cfg.get("headers") or {})
     json_body = cfg.get("json") or None
     timeout = float(cfg.get("timeout_sec") or 20)
 
@@ -99,6 +111,13 @@ def collect_from_http_json(cfg: Dict[str, Any]) -> List[Job]:
             resp = requests.request(method, url, params=params, headers=headers, json=json_body, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
+    except requests.HTTPError as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if int(status_code or 0) == 403:
+            print(f"[http_json:{name}] blocked: HTTP 403 {url}")
+            return []
+        print(f"[http_json:{name}] failed: {exc}")
+        return []
     except Exception as exc:
         print(f"[http_json:{name}] failed: {exc}")
         return []

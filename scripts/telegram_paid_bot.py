@@ -2509,14 +2509,14 @@ def main() -> int:
             err_text = _safe(e).lower()
             if "409" in err_text or "conflict:" in err_text:
                 print(
-                    "[tg-paid-bot] polling conflict: another bot instance is using the same token. "
-                    "Stop any local/duplicate poller or rotate the token if the conflict persists."
+                    "[tg-paid-bot] polling conflict: another getUpdates request is still active. "
+                    "This can be a duplicate poller or a stale long-poll request."
                 )
                 try:
                     api.delete_webhook(drop_pending_updates=False)
                 except Exception:
                     pass
-                time.sleep(max(10.0, settings.sleep_sec * 4))
+                time.sleep(max(float(settings.poll_timeout) + 5.0, 30.0))
                 continue
             time.sleep(max(3.0, settings.sleep_sec))
         except Exception as e:
