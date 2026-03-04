@@ -1,7 +1,7 @@
 AIJobSearcher
 =============
 
-![AIJobSearcher cover](assets/searche2r.png)
+![AIJobSearcher cover](assets/aya_operator_cover.png)
 
 Remote work lead engine with a paid Telegram delivery layer.
 
