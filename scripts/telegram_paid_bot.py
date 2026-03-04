@@ -1667,9 +1667,11 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
 
     user = dict(message.get("from") or {})
     chat = dict(message.get("chat") or {})
+    document = dict(message.get("document") or {})
     user_id = int(user.get("id") or 0)
     chat_id = int(chat.get("id") or 0)
     username = _safe(user.get("username"))
+    first_name = _safe(user.get("first_name"))
     upsert_bot_user(
         conn,
         BotUser(
