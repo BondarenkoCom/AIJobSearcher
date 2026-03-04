@@ -20,6 +20,7 @@ from src.config import cfg_get, load_config, resolve_path  # noqa: E402
 from src.email_sender import load_env_file  # noqa: E402
 from src.offer_feed import build_offer_rows, get_offer_row_by_lead_id  # noqa: E402
 from src.offer_profiles import OfferProfile, load_offer_profiles  # noqa: E402
+from src.profile_store import normalize_person_name  # noqa: E402
 from src.telegram_bot_api import TelegramApiError, TelegramBotApi  # noqa: E402
 from src.telegram_paid_store import (  # noqa: E402
     BotUser,
@@ -81,6 +82,16 @@ def _int_env(name: str, default: int) -> int:
 
 def _safe(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _display_name(*, username: str = "", first_name: str = "") -> str:
+    name = normalize_person_name(_safe(first_name))
+    if name:
+        return name
+    user = _safe(username).lstrip("@")
+    if user:
+        return user
+    return "there"
 
 
 def _parse_command(text: str) -> str:
@@ -303,6 +314,73 @@ def _main_menu_keyboard(settings: BotSettings, *, offer: OfferProfile, has_acces
         rows.append([{"text": "📦 Today's shortlist", "callback_data": "today"}, {"text": "Sources", "callback_data": "sources"}])
     else:
         rows.append([{"text": "🔓 Unlock full shortlist", "callback_data": "plans"}, {"text": "Sources", "callback_data": "sources"}])
+    return {"inline_keyboard": rows}
+
+
+def _build_offer_selector_keyboard(settings: BotSettings, *, current_offer_slug: str) -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = []
+    for offer in _selectable_offers(settings):
+        slug = offer.slug
+        title = _offer_title(offer)
+        prefix = "[Current]" if slug == current_offer_slug else ""
+        label = " ".join([part for part in [prefix, _offer_emoji(offer), title] if part]).strip()
+        rows.append([{"text": label, "callback_data": f"choose:{slug}"}])
+    rows.append([{"text": "Stack", "callback_data": "stack_menu"}, {"text": "CV", "callback_data": "cv_menu"}])
+    rows.append([{"text": "Today", "callback_data": "today"}])
+    rows.append([{"text": "Sources", "callback_data": "sources"}, {"text": "Plans", "callback_data": "plans"}])
+    return {"inline_keyboard": rows}
+
+
+def _build_stack_selector_keyboard(settings: BotSettings, *, offer: OfferProfile, current_stack_code: str) -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = [
+        [{"text": "[Current] Any stack" if not current_stack_code else "Any stack", "callback_data": "stack:any"}]
+    ]
+    current: List[Dict[str, str]] = []
+    for item in _offer_stack_options(offer):
+        code = _safe(item.get("code")).lower()
+        label = _safe(item.get("label"))
+        prefix = "[Current]" if code == current_stack_code else ""
+        current.append({"text": " ".join([part for part in [prefix, label] if part]).strip(), "callback_data": f"stack:{code}"})
+        if len(current) == 2:
+            rows.append(current)
+            current = []
+    if current:
+        rows.append(current)
+    rows.append([{"text": "Profession", "callback_data": "choose_menu"}, {"text": "CV", "callback_data": "cv_menu"}])
+    rows.append([{"text": "Today", "callback_data": "today"}, {"text": "Sources", "callback_data": "sources"}])
+    return {"inline_keyboard": rows}
+
+
+def _build_plans_keyboard(settings: BotSettings, *, offer: OfferProfile) -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = []
+    current: List[Dict[str, str]] = []
+    for item in _offer_plans(offer):
+        code = _safe(item.get("code")).lower()
+        stars = int(item.get("stars") or 0)
+        title = _safe(item.get("title")) or code
+        current.append({"text": f"{title} - {stars} XTR", "callback_data": f"buy:{offer.slug}:{code}"})
+        if len(current) == 2:
+            rows.append(current)
+            current = []
+    if current:
+        rows.append(current)
+    rows.append([{"text": "Profession", "callback_data": "choose_menu"}, {"text": "Stack", "callback_data": "stack_menu"}])
+    rows.append([{"text": "Preview", "callback_data": "preview"}, {"text": "CV", "callback_data": "cv_menu"}])
+    rows.append([{"text": "Sources", "callback_data": "sources"}])
+    rows.append([{"text": "Today", "callback_data": "today"}])
+    return {"inline_keyboard": rows}
+
+
+def _main_menu_keyboard(settings: BotSettings, *, offer: OfferProfile, has_access: bool) -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = [
+        [{"text": "Profession", "callback_data": "choose_menu"}, {"text": "Stack", "callback_data": "stack_menu"}],
+        [{"text": "Preview", "callback_data": "preview"}, {"text": "CV", "callback_data": "cv_menu"}],
+    ]
+    if has_access:
+        rows.append([{"text": "Today's shortlist", "callback_data": "today"}, {"text": "Sources", "callback_data": "sources"}])
+        rows.append([{"text": "Plans", "callback_data": "plans"}])
+    else:
+        rows.append([{"text": "Unlock full shortlist", "callback_data": "plans"}, {"text": "Sources", "callback_data": "sources"}])
     return {"inline_keyboard": rows}
 
 
@@ -778,6 +856,39 @@ def _send_stack_picker(api: TelegramBotApi, conn, settings: BotSettings, *, chat
             settings,
             offer=current_offer,
             current_stack_code=_current_stack_code(conn, user_id=user_id, offer=current_offer),
+        ),
+    )
+
+
+def _send_cv_prompt(
+    api: TelegramBotApi,
+    conn,
+    settings: BotSettings,
+    *,
+    chat_id: int,
+    user_id: int,
+    username: str,
+    first_name: str,
+    current_offer: OfferProfile,
+) -> None:
+    session = _resume_session(user_id)
+    session.awaiting_text = True
+    session.updated_at_ts = time.time()
+    has_resume = bool(_current_resume_text(user_id=user_id))
+    lines = [
+        f"{_display_name(username=username, first_name=first_name)}, send your CV now.",
+        "You can send plain text, PDF, TXT, or MD.",
+        "I will parse it and keep it only in temporary bot memory, not in our DB or long-term files.",
+    ]
+    if has_resume:
+        lines.append("Current status: a temporary CV is already loaded and will be replaced by the next one you send.")
+    api.send_message(
+        chat_id=chat_id,
+        text="\n".join(lines),
+        reply_markup=_main_menu_keyboard(
+            settings,
+            offer=current_offer,
+            has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug),
         ),
     )
 
@@ -1258,6 +1369,7 @@ def _handle_successful_payment(api: TelegramBotApi, conn, settings: BotSettings,
     user_id = int(user.get("id") or 0)
     chat_id = int(chat.get("id") or 0)
     username = _safe(user.get("username"))
+    first_name = _safe(user.get("first_name"))
     upsert_bot_user(
         conn,
         BotUser(
@@ -1409,6 +1521,19 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="stack_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Choose stack")
         _send_stack_picker(api, conn, settings, chat_id=chat_id, user_id=user_id, current_offer=current_offer, username=username)
+    elif data == "cv_menu":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="cv_prompt_opened")
+        api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Send your CV")
+        _send_cv_prompt(
+            api,
+            conn,
+            settings,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            first_name=_safe(from_user.get("first_name")),
+            current_offer=current_offer,
+        )
     elif data == "sources":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="sources_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening sources")
@@ -1556,7 +1681,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         api.send_message(
             chat_id=chat_id,
             text=(
-                "Temporary resume loaded.\n"
+                f"{_display_name(username=username, first_name=first_name)}, temporary resume loaded.\n"
                 "It stays only in bot memory for a short time and is not written to our DB or long-term files.\n"
                 "Now run /apply 1 after /today, or /forgetcv to clear it."
             ),
@@ -1572,7 +1697,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         api.send_message(
             chat_id=chat_id,
             text=(
-                "Resume file received.\n"
+                f"{_display_name(username=username, first_name=first_name)}, resume file received.\n"
                 "Reading it now. I will keep it only in temporary bot memory, not in our DB or long-term files."
             ),
         )
@@ -1597,7 +1722,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         api.send_message(
             chat_id=chat_id,
             text=(
-                "Resume accepted and parsed.\n"
+                f"{_display_name(username=username, first_name=first_name)}, resume accepted and parsed.\n"
                 "It is now loaded in temporary bot memory only.\n"
                 "Now run /apply 1 after /today, or /forgetcv to clear it."
             ),
@@ -1614,10 +1739,12 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="start" if command == "/start" else "help")
         welcome = (
             f"{settings.bot_name}\n"
+            f"Hi, {_display_name(username=username, first_name=first_name)}.\n"
             f"Current pack: {_offer_title(current_offer)}\n"
             f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}\n"
+            f"{_resume_status_line(user_id=user_id)}\n"
             "I send filtered remote work leads, not generic chat.\n"
-            "Use /choose to switch profession packs, /stack to focus the stack, /today for the shortlist, /apply 1 for AI analysis, or /plans to unlock full access."
+            "Use /choose to switch profession packs, /stack to focus the stack, tap CV to add your resume, /today for the shortlist, /apply 1 for AI analysis, or /plans to unlock full access."
         )
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         api.send_message(
@@ -1677,7 +1804,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             api.send_message(
                 chat_id=chat_id,
                 text=(
-                    "Resume file received.\n"
+                    f"{_display_name(username=username, first_name=first_name)}, resume file received.\n"
                     "Reading it now. I will keep it only in temporary bot memory, not in our DB or long-term files."
                 ),
             )
@@ -1699,7 +1826,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             api.send_message(
                 chat_id=chat_id,
                 text=(
-                    "Resume accepted and parsed.\n"
+                    f"{_display_name(username=username, first_name=first_name)}, resume accepted and parsed.\n"
                     "It is now loaded in temporary bot memory only.\n"
                     "Now run /apply 1 after /today, or /forgetcv to clear it."
                 ),
@@ -1717,26 +1844,26 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             api.send_message(
                 chat_id=chat_id,
                 text=(
-                    "Temporary resume loaded.\n"
+                    f"{_display_name(username=username, first_name=first_name)}, temporary resume loaded.\n"
                     "It is kept only in memory for a short time and is not written to our DB or long-term files.\n"
                     "Use /apply 1 after /today, or /forgetcv to clear it."
                 ),
             )
         else:
-            session.awaiting_text = True
-            session.updated_at_ts = time.time()
-            api.send_message(
+            _send_cv_prompt(
+                api,
+                conn,
+                settings,
                 chat_id=chat_id,
-                text=(
-                    "Send your resume text in the next message.\n"
-                    "This MVP keeps it only in temporary bot memory, not in our DB or long-term files.\n"
-                    "For now, send plain text instead of a file."
-                ),
+                user_id=user_id,
+                username=username,
+                first_name=first_name,
+                current_offer=current_offer,
             )
     elif command == "/forgetcv":
         _clear_transient_resume(user_id=user_id)
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="resume_cleared")
-        api.send_message(chat_id=chat_id, text="Temporary resume cleared from bot memory.")
+        api.send_message(chat_id=chat_id, text=f"{_display_name(username=username, first_name=first_name)}, temporary resume cleared from bot memory.")
     elif command in ("/plans", "/buy"):
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="plans_opened")
         api.send_message(
