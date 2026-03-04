@@ -1238,6 +1238,14 @@ def _send_apply_package(
         return
     assistant = _get_apply_assistant()
     resume_text = _current_resume_text(user_id=user_id)
+    api.send_chat_action(chat_id=chat_id, action="typing")
+    api.send_message(
+        chat_id=chat_id,
+        text=(
+            "⏳ Analyzing this lead now.\n"
+            "I am checking the role against your current pack, stack, and temporary CV."
+        ),
+    )
     try:
         analysis = assistant.analyze_job(
             offer_title=_offer_title(offer),
@@ -1310,6 +1318,14 @@ def _send_cover_for_lead(
         return
     assistant = _get_apply_assistant()
     resume_text = _current_resume_text(user_id=user_id)
+    api.send_chat_action(chat_id=chat_id, action="typing")
+    api.send_message(
+        chat_id=chat_id,
+        text=(
+            "⏳ Generating your cover note now.\n"
+            "I am tailoring it to this lead and your temporary CV."
+        ),
+    )
     try:
         cover = assistant.generate_cover(
             offer_title=_offer_title(offer),

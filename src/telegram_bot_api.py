@@ -66,6 +66,13 @@ class TelegramBotApi:
             payload["reply_markup"] = reply_markup
         return self._call("sendMessage", payload).get("result") or {}
 
+    def send_chat_action(self, *, chat_id: int, action: str = "typing") -> bool:
+        payload: Dict[str, Any] = {
+            "chat_id": int(chat_id),
+            "action": action,
+        }
+        return bool(self._call("sendChatAction", payload).get("result"))
+
     def answer_callback_query(
         self,
         *,
