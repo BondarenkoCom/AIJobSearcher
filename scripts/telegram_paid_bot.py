@@ -507,6 +507,13 @@ def _track_event(
     )
 
 
+def _commit_quietly(conn) -> None:
+    try:
+        conn.commit()
+    except Exception:
+        pass
+
+
 def _format_admin_stats(settings: BotSettings, summary: Dict[str, Any]) -> str:
     lines = [
         f"{settings.bot_name} admin stats",
@@ -881,7 +888,7 @@ def _personalized_rows(
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], str, int, bool]:
     stack_code = _current_stack_code(conn, user_id=user_id, offer=offer)
     stack_limit = 5 if stack_code else limit
-    rows_all = _get_rows(settings, offer=offer, limit=max(limit, stack_limit))
+    rows_all = _get_rows(conn, settings, offer=offer, limit=max(limit, stack_limit))
     rows, matched_count, broadened = _apply_stack_preference(
         rows_all,
         offer=offer,
@@ -986,14 +993,9 @@ def _count_values(rows: List[Dict[str, Any]], key: str) -> List[tuple[str, int]]
     return ordered
 
 
-def _get_rows(settings: BotSettings, *, offer: OfferProfile, limit: int) -> List[Dict[str, Any]]:
-    conn = db_connect(settings.db_path)
-    try:
-        init_db(conn)
-        fetch_limit = max(int(limit) * 8, 24)
-        return build_offer_rows(conn, offer=offer, scan_limit=max(500, fetch_limit * 4), limit=fetch_limit)
-    finally:
-        conn.close()
+def _get_rows(conn, settings: BotSettings, *, offer: OfferProfile, limit: int) -> List[Dict[str, Any]]:
+    fetch_limit = max(int(limit) * 8, 24)
+    return build_offer_rows(conn, offer=offer, scan_limit=max(500, fetch_limit * 4), limit=fetch_limit)
 
 
 def _send_offer_picker(api: TelegramBotApi, settings: BotSettings, *, chat_id: int, current_offer: OfferProfile) -> None:
@@ -1946,6 +1948,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
 
     if data == "preview":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="preview_requested")
+        _commit_quietly(conn)
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending preview")
         _send_button_progress(
             api,
@@ -1966,6 +1969,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
             _send_button_failure(api, chat_id=chat_id, label="that preview")
     elif data == "today":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="today_requested")
+        _commit_quietly(conn)
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         if has_access:
             api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Sending full shortlist")
@@ -2017,6 +2021,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
                 _send_button_failure(api, chat_id=chat_id, label="today's preview")
     elif data == "plans":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="plans_opened")
+        _commit_quietly(conn)
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening plans")
         api.send_message(
             chat_id=chat_id,
@@ -2025,14 +2030,17 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
         )
     elif data == "choose_menu":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="choose_opened")
+        _commit_quietly(conn)
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Choose profession")
         _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
     elif data == "stack_menu":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="stack_opened")
+        _commit_quietly(conn)
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Choose stack")
         _send_stack_picker(api, conn, settings, chat_id=chat_id, user_id=user_id, current_offer=current_offer, username=username)
     elif data == "cv_menu":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="cv_prompt_opened")
+        _commit_quietly(conn)
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Send your CV")
         _send_cv_prompt(
             api,
@@ -2046,6 +2054,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
         )
     elif data == "sources":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="sources_opened")
+        _commit_quietly(conn)
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening sources")
         _send_button_progress(
             api,
@@ -2067,6 +2076,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
     elif data.startswith("cover:"):
         lead_id = data.split(":", 1)[1].strip()
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="cover_requested", details={"lead_id": lead_id})
+        _commit_quietly(conn)
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         api.answer_callback_query(
             callback_query_id=_safe(callback_query.get("id")),
@@ -2096,6 +2106,7 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
             event_type="apply_requested",
             details={"lead_index": lead_index, "origin": "callback"},
         )
+        _commit_quietly(conn)
         api.answer_callback_query(
             callback_query_id=_safe(callback_query.get("id")),
             text=f"Analyze #{lead_index}" if lead_index > 0 else "Pick a valid lead",
@@ -2303,6 +2314,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
 
     if command in ("/start", "/help"):
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="start" if command == "/start" else "help")
+        _commit_quietly(conn)
         welcome = (
             f"{settings.bot_name}\n"
             f"Hi, {_display_name(username=username, first_name=first_name)}.\n"
@@ -2320,15 +2332,19 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         )
     elif command in ("/choose", "/profession", "/professions"):
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="choose_opened")
+        _commit_quietly(conn)
         _send_offer_picker(api, settings, chat_id=chat_id, current_offer=current_offer)
     elif command == "/stack":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="stack_opened")
+        _commit_quietly(conn)
         _send_stack_picker(api, conn, settings, chat_id=chat_id, user_id=user_id, current_offer=current_offer, username=username)
     elif command == "/sources":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="sources_opened")
+        _commit_quietly(conn)
         _send_sources(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif command == "/today":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="today_requested")
+        _commit_quietly(conn)
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         if has_access:
             _send_feed(
@@ -2346,6 +2362,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
     elif command == "/apply":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="apply_requested")
+        _commit_quietly(conn)
         raw_arg = _command_arg(text)
         try:
             lead_index = int(raw_arg or "0")
