@@ -56,6 +56,8 @@ class BotSettings:
     commands: List[Dict[str, str]]
     free_user_ids: Set[int]
     free_usernames: Set[str]
+    admin_user_ids: Set[int]
+    admin_usernames: Set[str]
 
 
 @dataclass
@@ -434,8 +436,23 @@ def _is_free_user(settings: BotSettings, *, user_id: int, username: str) -> bool
     return bool(uname) and uname in settings.free_usernames
 
 
+def _is_named_admin(settings: BotSettings, *, user_id: int, username: str) -> bool:
+    if int(user_id or 0) in settings.admin_user_ids:
+        return True
+    uname = _safe(username).lstrip("@").lower()
+    return bool(uname) and uname in settings.admin_usernames
+
+
+def _has_privileged_access(settings: BotSettings, *, user_id: int, username: str) -> bool:
+    return _is_free_user(settings, user_id=user_id, username=username) or _is_named_admin(
+        settings,
+        user_id=user_id,
+        username=username,
+    )
+
+
 def _has_offer_access(settings: BotSettings, conn, *, user_id: int, username: str, offer_slug: str) -> bool:
-    if _is_free_user(settings, user_id=user_id, username=username):
+    if _has_privileged_access(settings, user_id=user_id, username=username):
         return True
     return get_active_subscription(conn, user_id=user_id, offer_slug=offer_slug) is not None
 
@@ -444,7 +461,7 @@ def _is_admin(settings: BotSettings, *, user_id: int, chat_id: int, username: st
     admin_id = int(settings.admin_chat_id or 0)
     if admin_id and (int(user_id or 0) == admin_id or int(chat_id or 0) == admin_id):
         return True
-    return _is_free_user(settings, user_id=user_id, username=username)
+    return _has_privileged_access(settings, user_id=user_id, username=username)
 
 
 def _track_event(
@@ -1929,6 +1946,8 @@ def _load_settings(args) -> BotSettings:
         terms_text = f"Terms: {terms_url}"
     free_user_ids = _split_ints(os.getenv("TELEGRAM_FREE_USER_IDS") or "")
     free_usernames = _split_names(os.getenv("TELEGRAM_FREE_USERNAMES") or "")
+    admin_user_ids = _split_ints(os.getenv("TELEGRAM_ADMIN_USER_IDS") or "")
+    admin_usernames = _split_names(os.getenv("TELEGRAM_ADMIN_USERNAMES") or "")
 
     return BotSettings(
         token=token,
@@ -1946,6 +1965,8 @@ def _load_settings(args) -> BotSettings:
         commands=list(bot_cfg.get("commands") or []),
         free_user_ids=free_user_ids,
         free_usernames=free_usernames,
+        admin_user_ids=admin_user_ids,
+        admin_usernames=admin_usernames,
     )
 
 
