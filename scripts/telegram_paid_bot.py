@@ -1994,15 +1994,18 @@ def main() -> int:
         try:
             updates = api.get_updates(offset=offset, timeout=settings.poll_timeout, allowed_updates=allowed_updates)
             for upd in updates:
-                offset = int(upd.get("update_id") or 0) + 1
+                next_offset = int(upd.get("update_id") or 0) + 1
                 if upd.get("pre_checkout_query"):
                     _handle_pre_checkout(api, conn, settings, pre_checkout_query=dict(upd.get("pre_checkout_query") or {}))
+                    offset = next_offset
                     continue
                 if upd.get("callback_query"):
                     _handle_callback(api, conn, settings, callback_query=dict(upd.get("callback_query") or {}))
+                    offset = next_offset
                     continue
                 if upd.get("message"):
                     _handle_message(api, conn, settings, message=dict(upd.get("message") or {}))
+                    offset = next_offset
                     continue
         except KeyboardInterrupt:
             print("[tg-paid-bot] interrupted")
