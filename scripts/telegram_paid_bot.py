@@ -12,9 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.activity_db import connect as db_connect, init_db  # noqa: E402
+from src.apply_assistant import ApplyAssistant, ApplyAssistantError  # noqa: E402
 from src.config import cfg_get, load_config, resolve_path  # noqa: E402
 from src.email_sender import load_env_file  # noqa: E402
-from src.offer_feed import build_offer_rows  # noqa: E402
+from src.offer_feed import build_offer_rows, get_offer_row_by_lead_id  # noqa: E402
 from src.offer_profiles import OfferProfile, load_offer_profiles  # noqa: E402
 from src.telegram_bot_api import TelegramApiError, TelegramBotApi  # noqa: E402
 from src.telegram_paid_store import (  # noqa: E402
@@ -25,6 +26,7 @@ from src.telegram_paid_store import (  # noqa: E402
     get_user_selected_offer,
     get_user_selected_stack,
     get_user_summary,
+    log_llm_usage,
     log_bot_event,
     log_delivery,
     set_user_selected_offer,
@@ -52,6 +54,18 @@ class BotSettings:
     free_usernames: Set[str]
 
 
+@dataclass
+class ResumeSession:
+    resume_text: str = ""
+    awaiting_text: bool = False
+    updated_at_ts: float = 0.0
+
+
+_RESUME_TTL_SEC = 2 * 60 * 60
+_RESUME_SESSIONS: Dict[int, ResumeSession] = {}
+_APPLY_ASSISTANT: ApplyAssistant | None = None
+
+
 def _int_env(name: str, default: int) -> int:
     raw = str(os.getenv(name) or "").strip()
     if not raw:
@@ -71,6 +85,14 @@ def _parse_command(text: str) -> str:
     if "@" in cmd:
         cmd = cmd.split("@", 1)[0]
     return cmd.lower()
+
+
+def _command_arg(text: str) -> str:
+    raw = _safe(text)
+    parts = raw.split(maxsplit=1)
+    if len(parts) < 2:
+        return ""
+    return _safe(parts[1])
 
 
 def _parse_payload(payload: str) -> Dict[str, str]:
@@ -409,7 +431,77 @@ def _format_admin_stats(settings: BotSettings, summary: Dict[str, Any]) -> str:
             title = _offer_title(offer) if offer is not None else slug or "-"
             lines.append(f"- {title}: {int(row.get('payments') or 0)} payments / {int(row.get('stars') or 0)} XTR")
 
+    llm_usage = dict(summary.get("llm_usage") or {})
+    if llm_usage:
+        lines.extend(
+            [
+                "",
+                "LLM spend",
+                f"- Total calls: {int(llm_usage.get('calls') or 0)}",
+                f"- Prompt tokens: {int(llm_usage.get('prompt_tokens') or 0)}",
+                f"- Completion tokens: {int(llm_usage.get('completion_tokens') or 0)}",
+                f"- Total tokens: {int(llm_usage.get('total_tokens') or 0)}",
+                f"- Estimated total spend: ${float(llm_usage.get('spend_usd') or 0.0):.4f}",
+            ]
+        )
+
+    llm_by_model = list(summary.get("llm_by_model") or [])
+    if llm_by_model:
+        lines.extend(["", "LLM by model"])
+        for row in llm_by_model[:8]:
+            provider = _safe(row.get("provider")) or "-"
+            model = _safe(row.get("model")) or "-"
+            task_type = _safe(row.get("task_type")) or "-"
+            lines.append(
+                f"- {provider}/{model} [{task_type}]: {int(row.get('calls') or 0)} calls / "
+                f"{int(row.get('total_tokens') or 0)} tokens / ${float(row.get('spend_usd') or 0.0):.4f}"
+            )
+
     return "\n".join(lines)
+
+
+def _resume_session(user_id: int) -> ResumeSession:
+    session = _RESUME_SESSIONS.get(int(user_id))
+    now = time.time()
+    if session is None or (session.updated_at_ts and (now - float(session.updated_at_ts)) > _RESUME_TTL_SEC):
+        session = ResumeSession()
+        _RESUME_SESSIONS[int(user_id)] = session
+    return session
+
+
+def _store_transient_resume(*, user_id: int, resume_text: str) -> None:
+    session = _resume_session(int(user_id))
+    session.resume_text = _safe(resume_text)
+    session.awaiting_text = False
+    session.updated_at_ts = time.time()
+
+
+def _clear_transient_resume(*, user_id: int) -> None:
+    session = _resume_session(int(user_id))
+    session.resume_text = ""
+    session.awaiting_text = False
+    session.updated_at_ts = time.time()
+
+
+def _current_resume_text(*, user_id: int) -> str:
+    return _safe(_resume_session(int(user_id)).resume_text)
+
+
+def _resume_status_line(*, user_id: int) -> str:
+    if _current_resume_text(user_id=user_id):
+        return "Resume mode: temporary text loaded in memory only"
+    return "Resume mode: not loaded"
+
+
+def _assistant_ready() -> bool:
+    return bool(_safe(os.getenv("OPENAI_API_KEY")) and _safe(os.getenv("XAI_API_KEY")))
+
+
+def _get_apply_assistant() -> ApplyAssistant:
+    global _APPLY_ASSISTANT
+    if _APPLY_ASSISTANT is None:
+        _APPLY_ASSISTANT = ApplyAssistant()
+    return _APPLY_ASSISTANT
 
 
 def _row_matches_stack(row: Dict[str, Any], *, stack_option: Dict[str, Any]) -> bool:
@@ -496,6 +588,27 @@ def _personalized_rows(
     return rows, rows_all, stack_code, matched_count, broadened
 
 
+def _resolve_shortlist_row(
+    conn,
+    settings: BotSettings,
+    *,
+    offer: OfferProfile,
+    user_id: int,
+    lead_index: int,
+) -> tuple[Dict[str, Any], int]:
+    rows, _rows_all, _stack_code, _matched_count, _broadened = _personalized_rows(
+        conn,
+        settings,
+        offer=offer,
+        user_id=user_id,
+        limit=_offer_full_limit(offer),
+        delivery_kind="member_full",
+    )
+    if lead_index < 1 or lead_index > len(rows):
+        return {}, len(rows)
+    return dict(rows[lead_index - 1]), len(rows)
+
+
 def _build_terms_text(settings: BotSettings) -> str:
     if settings.terms_text:
         return settings.terms_text
@@ -504,6 +617,7 @@ def _build_terms_text(settings: BotSettings) -> str:
         "- This bot sells access to filtered job/gig leads, not guaranteed employment.\n"
         "- Refund handling is manual via support.\n"
         "- Access duration starts after successful Telegram Stars payment.\n"
+        "- Resume text sent via /cv is processed transiently in memory and is not stored in our DB or long-term files.\n"
         "- Links and availability may change on source platforms."
     )
 
@@ -762,6 +876,14 @@ def _send_feed(
     for chunk in _chunk_text(rows, chunk_size=chunk_size):
         api.send_message(chat_id=chat_id, text=chunk)
         sent += 1
+    tip_lines = [
+        "Apply Assistant",
+        f"- Use /apply 1..{len(rows)} to analyze a lead from this shortlist",
+        "- Use /cv to send temporary resume text for tailored cover notes",
+        "- Use /forgetcv to wipe that temporary resume from bot memory",
+    ]
+    api.send_message(chat_id=chat_id, text="\n".join(tip_lines))
+    sent += 1
     log_delivery(
         conn,
         user_id=user_id,
@@ -825,6 +947,7 @@ def _send_status(
             f"Current pack: {_offer_title(offer)}\n"
             f"Current stack: {stack_label}\n"
             "Status: free test access\n"
+            f"{_resume_status_line(user_id=user_id)}\n"
             f"Payments: {summary.get('payments_count')}\n"
             f"Deliveries: {summary.get('deliveries_count')}"
         )
@@ -836,6 +959,7 @@ def _send_status(
             "Status: active\n"
             f"Plan: {_safe(active.get('plan_code'))}\n"
             f"Access until: {_safe(active.get('ends_at'))}\n"
+            f"{_resume_status_line(user_id=user_id)}\n"
             f"Payments: {summary.get('payments_count')}\n"
             f"Deliveries: {summary.get('deliveries_count')}"
         )
@@ -845,11 +969,208 @@ def _send_status(
             f"Current pack: {_offer_title(offer)}\n"
             f"Current stack: {stack_label}\n"
             "Status: no active access\n"
+            f"{_resume_status_line(user_id=user_id)}\n"
             f"Payments: {summary.get('payments_count')}\n"
             f"Deliveries: {summary.get('deliveries_count')}"
         )
         has_access = False
     api.send_message(chat_id=chat_id, text=text, reply_markup=_main_menu_keyboard(settings, offer=offer, has_access=has_access))
+
+
+def _apply_keyboard(*, lead: Dict[str, Any]) -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = []
+    if _safe(lead.get("url")):
+        rows.append([{"text": "Open job", "url": _safe(lead.get("url"))}])
+    rows.append([{"text": "Generate cover", "callback_data": f"cover:{_safe(lead.get('lead_id'))}"}])
+    rows.append([{"text": "Today", "callback_data": "today"}, {"text": "Sources", "callback_data": "sources"}])
+    return {"inline_keyboard": rows}
+
+
+def _format_apply_analysis(
+    *,
+    offer: OfferProfile,
+    stack_label: str,
+    lead_index: int,
+    lead: Dict[str, Any],
+    analysis: Dict[str, Any],
+    resume_loaded: bool,
+) -> str:
+    strengths = [str(x).strip() for x in analysis.get("strengths") or [] if str(x).strip()]
+    weaknesses = [str(x).strip() for x in analysis.get("weaknesses") or [] if str(x).strip()]
+    lines = [
+        "Apply Assistant",
+        f"Pack: {_offer_title(offer)}",
+        f"Lead: {lead_index}. {_safe(lead.get('title'))}",
+        f"Company: {_safe(lead.get('company')) or '-'}",
+        f"Stack focus: {stack_label}",
+        f"Match score: {int(analysis.get('match_score') or 0)}%",
+        f"Resume mode: {'temporary resume loaded' if resume_loaded else 'no resume, using pack/stack only'}",
+    ]
+    if strengths:
+        lines.append("")
+        lines.append("Strengths")
+        for item in strengths[:5]:
+            lines.append(f"- {item}")
+    if weaknesses:
+        lines.append("")
+        lines.append("Weaknesses")
+        for item in weaknesses[:3]:
+            lines.append(f"- {item}")
+    pitch = _safe(analysis.get("pitch"))
+    if pitch:
+        lines.append("")
+        lines.append(f"Pitch: {pitch}")
+    salary_hint = _safe(analysis.get("salary_hint"))
+    if salary_hint:
+        lines.append(f"Salary hint: {salary_hint}")
+    return "\n".join(lines)
+
+
+def _send_apply_package(
+    api: TelegramBotApi,
+    conn,
+    settings: BotSettings,
+    *,
+    offer: OfferProfile,
+    user_id: int,
+    username: str,
+    chat_id: int,
+    lead_index: int,
+) -> None:
+    lead, total = _resolve_shortlist_row(conn, settings, offer=offer, user_id=user_id, lead_index=lead_index)
+    if not lead:
+        api.send_message(
+            chat_id=chat_id,
+            text=f"Lead number is out of range. Use /today first, then /apply 1..{max(1, total)}.",
+            reply_markup=_main_menu_keyboard(
+                settings,
+                offer=offer,
+                has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug),
+            ),
+        )
+        return
+    if not _assistant_ready():
+        api.send_message(chat_id=chat_id, text="Apply Assistant is not configured yet.")
+        return
+    assistant = _get_apply_assistant()
+    resume_text = _current_resume_text(user_id=user_id)
+    try:
+        analysis = assistant.analyze_job(
+            offer_title=_offer_title(offer),
+            stack_label=_selected_stack_label(conn, user_id=user_id, offer=offer),
+            lead=lead,
+            resume_text=resume_text,
+        )
+    except ApplyAssistantError as exc:
+        api.send_message(chat_id=chat_id, text=f"Apply Assistant error: {_safe(exc)}")
+        return
+    log_llm_usage(
+        conn,
+        user_id=user_id,
+        offer_slug=offer.slug,
+        lead_id=_safe(lead.get("lead_id")),
+        provider=analysis.usage.provider,
+        model=analysis.usage.model,
+        task_type="analyze",
+        prompt_tokens=analysis.usage.prompt_tokens,
+        completion_tokens=analysis.usage.completion_tokens,
+        total_tokens=analysis.usage.total_tokens,
+        estimated_cost_usd=analysis.usage.estimated_cost_usd,
+        details={"resume_loaded": bool(resume_text)},
+    )
+    _track_event(
+        conn,
+        user_id=user_id,
+        chat_id=chat_id,
+        offer_slug=offer.slug,
+        event_type="apply_analyzed",
+        details={"lead_id": _safe(lead.get("lead_id")), "lead_index": int(lead_index)},
+    )
+    api.send_message(
+        chat_id=chat_id,
+        text=_format_apply_analysis(
+            offer=offer,
+            stack_label=_selected_stack_label(conn, user_id=user_id, offer=offer),
+            lead_index=lead_index,
+            lead=lead,
+            analysis={
+                "match_score": analysis.match_score,
+                "strengths": analysis.strengths,
+                "weaknesses": analysis.weaknesses,
+                "pitch": analysis.pitch,
+                "salary_hint": analysis.salary_hint,
+            },
+            resume_loaded=bool(resume_text),
+        ),
+        reply_markup=_apply_keyboard(lead=lead),
+    )
+
+
+def _send_cover_for_lead(
+    api: TelegramBotApi,
+    conn,
+    settings: BotSettings,
+    *,
+    offer: OfferProfile,
+    user_id: int,
+    username: str,
+    chat_id: int,
+    lead_id: str,
+) -> None:
+    lead = get_offer_row_by_lead_id(conn, offer=offer, lead_id=lead_id)
+    if not lead:
+        api.send_message(chat_id=chat_id, text="That lead is no longer available in the current shortlist snapshot.")
+        return
+    if not _assistant_ready():
+        api.send_message(chat_id=chat_id, text="Apply Assistant is not configured yet.")
+        return
+    assistant = _get_apply_assistant()
+    resume_text = _current_resume_text(user_id=user_id)
+    try:
+        cover = assistant.generate_cover(
+            offer_title=_offer_title(offer),
+            stack_label=_selected_stack_label(conn, user_id=user_id, offer=offer),
+            lead=lead,
+            resume_text=resume_text,
+        )
+    except ApplyAssistantError as exc:
+        api.send_message(chat_id=chat_id, text=f"Cover generation error: {_safe(exc)}")
+        return
+    log_llm_usage(
+        conn,
+        user_id=user_id,
+        offer_slug=offer.slug,
+        lead_id=_safe(lead.get("lead_id")),
+        provider=cover.usage.provider,
+        model=cover.usage.model,
+        task_type="cover",
+        prompt_tokens=cover.usage.prompt_tokens,
+        completion_tokens=cover.usage.completion_tokens,
+        total_tokens=cover.usage.total_tokens,
+        estimated_cost_usd=cover.usage.estimated_cost_usd,
+        details={"resume_loaded": bool(resume_text)},
+    )
+    _track_event(
+        conn,
+        user_id=user_id,
+        chat_id=chat_id,
+        offer_slug=offer.slug,
+        event_type="cover_generated",
+        details={"lead_id": _safe(lead.get("lead_id"))},
+    )
+    intro = [
+        "Cover note",
+        f"Lead: {_safe(lead.get('title'))}",
+        f"Company: {_safe(lead.get('company')) or '-'}",
+        f"Resume mode: {'temporary resume loaded' if resume_text else 'no resume, using pack/stack only'}",
+        "",
+        _safe(cover.text),
+    ]
+    api.send_message(
+        chat_id=chat_id,
+        text="\n".join(intro),
+        reply_markup=_apply_keyboard(lead=lead),
+    )
 
 
 def _send_plan_invoice(
@@ -1051,6 +1372,20 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="sources_opened")
         api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Opening sources")
         _send_sources(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+    elif data.startswith("cover:"):
+        lead_id = data.split(":", 1)[1].strip()
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="cover_requested", details={"lead_id": lead_id})
+        api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Generating cover")
+        _send_cover_for_lead(
+            api,
+            conn,
+            settings,
+            offer=current_offer,
+            user_id=user_id,
+            username=username,
+            chat_id=chat_id,
+            lead_id=lead_id,
+        )
     elif data.startswith("choose:"):
         chosen_slug = data.split(":", 1)[1].strip()
         chosen_offer = settings.offers.get(chosen_slug)
@@ -1165,6 +1500,40 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     current_offer = _current_offer(conn, settings, user_id=user_id)
     text = _safe(message.get("text"))
     command = _parse_command(text)
+    session = _resume_session(user_id)
+
+    if session.awaiting_text and text and not command:
+        _store_transient_resume(user_id=user_id, resume_text=text)
+        _track_event(
+            conn,
+            user_id=user_id,
+            chat_id=chat_id,
+            offer_slug=current_offer.slug,
+            event_type="resume_loaded",
+            details={"chars": len(_current_resume_text(user_id=user_id))},
+        )
+        api.send_message(
+            chat_id=chat_id,
+            text=(
+                "Temporary resume loaded.\n"
+                "It stays only in bot memory for a short time and is not written to our DB or long-term files.\n"
+                "Now run /apply 1 after /today, or /forgetcv to clear it."
+            ),
+            reply_markup=_main_menu_keyboard(
+                settings,
+                offer=current_offer,
+                has_access=_has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug),
+            ),
+        )
+        conn.commit()
+        return
+    if session.awaiting_text and message.get("document"):
+        api.send_message(
+            chat_id=chat_id,
+            text="For now, send resume text directly in chat after /cv. File upload parsing is not enabled in this MVP.",
+        )
+        conn.commit()
+        return
 
     if command in ("/start", "/help"):
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="start" if command == "/start" else "help")
@@ -1173,7 +1542,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             f"Current pack: {_offer_title(current_offer)}\n"
             f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}\n"
             "I send filtered remote work leads, not generic chat.\n"
-            "Use /choose to switch profession packs, /stack to focus the stack, /today for the shortlist, or /plans to unlock full access."
+            "Use /choose to switch profession packs, /stack to focus the stack, /today for the shortlist, /apply 1 for AI analysis, or /plans to unlock full access."
         )
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         api.send_message(
@@ -1207,6 +1576,61 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             )
         else:
             _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+    elif command == "/apply":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="apply_requested")
+        raw_arg = _command_arg(text)
+        try:
+            lead_index = int(raw_arg or "1")
+        except Exception:
+            lead_index = 0
+        if lead_index <= 0:
+            api.send_message(chat_id=chat_id, text="Use /apply N, for example /apply 1 or /apply 3.")
+        else:
+            _send_apply_package(
+                api,
+                conn,
+                settings,
+                offer=current_offer,
+                user_id=user_id,
+                username=username,
+                chat_id=chat_id,
+                lead_index=lead_index,
+            )
+    elif command == "/cv":
+        body = _command_arg(text)
+        if body:
+            _store_transient_resume(user_id=user_id, resume_text=body)
+            _track_event(
+                conn,
+                user_id=user_id,
+                chat_id=chat_id,
+                offer_slug=current_offer.slug,
+                event_type="resume_loaded",
+                details={"chars": len(_current_resume_text(user_id=user_id))},
+            )
+            api.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Temporary resume loaded.\n"
+                    "It is kept only in memory for a short time and is not written to our DB or long-term files.\n"
+                    "Use /apply 1 after /today, or /forgetcv to clear it."
+                ),
+            )
+        else:
+            session.awaiting_text = True
+            session.updated_at_ts = time.time()
+            api.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Send your resume text in the next message.\n"
+                    "This MVP keeps it only in temporary bot memory, not in our DB or long-term files.\n"
+                    "For now, send plain text instead of a file."
+                ),
+            )
+    elif command == "/forgetcv":
+        _clear_transient_resume(user_id=user_id)
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="resume_cleared")
+        api.send_message(chat_id=chat_id, text="Temporary resume cleared from bot memory.")
     elif command in ("/plans", "/buy"):
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="plans_opened")
         api.send_message(
@@ -1230,7 +1654,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
     else:
         api.send_message(
             chat_id=chat_id,
-            text="Unknown command. Try /choose, /stack, /sources, /today, /plans, /status, /terms, or /support.",
+            text="Unknown command. Try /choose, /stack, /sources, /today, /apply, /cv, /forgetcv, /plans, /status, /terms, or /support.",
             reply_markup=_main_menu_keyboard(
                 settings,
                 offer=current_offer,

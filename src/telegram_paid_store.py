@@ -270,6 +270,44 @@ def log_delivery(
     )
 
 
+def log_llm_usage(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    offer_slug: str,
+    lead_id: str,
+    provider: str,
+    model: str,
+    task_type: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    estimated_cost_usd: float,
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO llm_usage_log
+        (user_id, offer_slug, lead_id, provider, model, task_type, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, created_at, details_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            _safe(offer_slug),
+            _safe(lead_id),
+            _safe(provider),
+            _safe(model),
+            _safe(task_type),
+            max(0, int(prompt_tokens)),
+            max(0, int(completion_tokens)),
+            max(0, int(total_tokens)),
+            float(estimated_cost_usd or 0.0),
+            _now_iso(),
+            json.dumps(details or {}, ensure_ascii=False, sort_keys=True),
+        ),
+    )
+
+
 def get_user_summary(conn: sqlite3.Connection, *, user_id: int, offer_slug: str) -> Dict[str, Any]:
     sub = get_active_subscription(conn, user_id=user_id, offer_slug=offer_slug)
     payments = conn.execute(
@@ -363,6 +401,29 @@ def get_bot_analytics_summary(conn: sqlite3.Connection) -> Dict[str, Any]:
         LIMIT 5
         """
     ).fetchall()
+    llm_totals = conn.execute(
+        """
+        SELECT
+          COUNT(*) AS calls,
+          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+          COALESCE(SUM(total_tokens), 0) AS total_tokens,
+          COALESCE(SUM(estimated_cost_usd), 0) AS spend_usd
+        FROM llm_usage_log
+        """
+    ).fetchone()
+    llm_by_model = conn.execute(
+        """
+        SELECT model, provider, task_type,
+               COUNT(*) AS calls,
+               COALESCE(SUM(total_tokens), 0) AS total_tokens,
+               COALESCE(SUM(estimated_cost_usd), 0) AS spend_usd
+        FROM llm_usage_log
+        GROUP BY provider, model, task_type
+        ORDER BY spend_usd DESC, calls DESC
+        LIMIT 8
+        """
+    ).fetchall()
 
     return {
         "users_total": _count(conn, "SELECT COUNT(*) AS c FROM bot_users"),
@@ -395,4 +456,6 @@ def get_bot_analytics_summary(conn: sqlite3.Connection) -> Dict[str, Any]:
         "full_deliveries": full_sent,
         "top_packs_by_users": [dict(row) for row in unique_users_by_pack],
         "top_packs_by_payments": [dict(row) for row in payments_by_pack],
+        "llm_usage": dict(llm_totals) if llm_totals is not None else {},
+        "llm_by_model": [dict(row) for row in llm_by_model],
     }

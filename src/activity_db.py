@@ -161,6 +161,26 @@ CREATE TABLE IF NOT EXISTS bot_event_log (
 CREATE INDEX IF NOT EXISTS idx_bot_event_user_type ON bot_event_log(user_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_bot_event_offer_type ON bot_event_log(offer_slug, event_type);
 CREATE INDEX IF NOT EXISTS idx_bot_event_created_at ON bot_event_log(created_at);
+
+CREATE TABLE IF NOT EXISTS llm_usage_log (
+  llm_usage_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL DEFAULT 0,
+  offer_slug TEXT NOT NULL,
+  lead_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  task_type TEXT NOT NULL,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  estimated_cost_usd REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  details_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_usage_created_at ON llm_usage_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_user_id ON llm_usage_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_offer_slug ON llm_usage_log(offer_slug);
 """
 
 

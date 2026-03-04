@@ -117,6 +117,40 @@ def latest_rows(conn, limit: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in conn.execute(sql, (max(limit, 1),)).fetchall()]
 
 
+def get_offer_row_by_lead_id(conn, *, offer: OfferProfile, lead_id: str) -> Dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT lead_id, platform, lead_type, contact, url, company, job_title, location, source, created_at, raw_json
+        FROM leads
+        WHERE lead_id = ?
+        LIMIT 1
+        """,
+        (safe_text(lead_id),),
+    ).fetchone()
+    if row is None:
+        return {}
+    raw = parse_json(safe_text(row["raw_json"]))
+    row_dict = dict(row)
+    if not matches_offer(row_dict, raw, offer):
+        return {}
+    text = compose_offer_text(row_dict, raw)
+    return {
+        "lead_id": safe_text(row_dict.get("lead_id")),
+        "title": safe_text(row_dict.get("job_title")),
+        "company": safe_text(row_dict.get("company")),
+        "platform": safe_text(row_dict.get("platform")),
+        "source": safe_text(row_dict.get("source")),
+        "lead_type": safe_text(row_dict.get("lead_type")),
+        "location": safe_text(row_dict.get("location")),
+        "url": safe_text(row_dict.get("url")),
+        "contact_method": offer_contact_method(row_dict, raw, offer),
+        "created_at": safe_text(row_dict.get("created_at")),
+        "score": offer_score(row_dict, raw, offer),
+        "snippet": re.sub(r"\s+", " ", text).strip()[:220],
+        "stack_hits": offer_stack_hits(row_dict, raw, offer),
+    }
+
+
 def build_offer_rows(conn, *, offer: OfferProfile, scan_limit: int, limit: int) -> List[Dict[str, Any]]:
     rows = latest_rows(conn, limit=max(int(scan_limit), int(limit) * 4))
     selected: List[Dict[str, Any]] = []
