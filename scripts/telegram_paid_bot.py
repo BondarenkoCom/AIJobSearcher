@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import io
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -655,6 +656,22 @@ def _looks_like_resume_document(document: Dict[str, Any]) -> bool:
     return not file_name and mime_type == "application/pdf"
 
 
+def _format_cover_body(text: str) -> str:
+    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", _safe(text)) if part.strip()]
+    if not parts:
+        return ""
+    chunks: List[str] = []
+    current: List[str] = []
+    for part in parts:
+        current.append(part)
+        if len(current) == 2:
+            chunks.append(" ".join(current))
+            current = []
+    if current:
+        chunks.append(" ".join(current))
+    return "\n\n".join(chunks)
+
+
 def _row_matches_stack(row: Dict[str, Any], *, stack_option: Dict[str, Any]) -> bool:
     tokens = [str(x).strip().lower() for x in stack_option.get("match_any") or [] if str(x).strip()]
     if not tokens:
@@ -1060,12 +1077,19 @@ def _send_feed(
     for chunk in _chunk_text(rows, chunk_size=chunk_size):
         api.send_message(chat_id=chat_id, text=chunk)
         sent += 1
-    tip_lines = [
-        "Apply Assistant",
-        f"- Use /apply 1..{len(rows)} to analyze a lead from this shortlist",
-        "- Use /cv to send temporary resume text for tailored cover notes",
-        "- Use /forgetcv to wipe that temporary resume from bot memory",
-    ]
+    if has_access:
+        tip_lines = [
+            "🎯 Apply Assistant",
+            f"• Use /apply 1..{len(rows)} to analyze a lead from this shortlist",
+            "• Use /cv to load a temporary CV for tailored cover notes",
+            "• Use /forgetcv to wipe that temporary CV from bot memory",
+        ]
+    else:
+        tip_lines = [
+            "🔒 AI Apply Assistant",
+            "• AI match analysis and tailored cover notes are paid features",
+            "• Open Plans to unlock full shortlist + AI access with Stars",
+        ]
     api.send_message(chat_id=chat_id, text="\n".join(tip_lines))
     sent += 1
     log_delivery(
@@ -1100,6 +1124,15 @@ def _send_preview_with_pitch(
         limit=_offer_preview_limit(offer),
         delivery_kind="preview",
     )
+    if not _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug):
+        _send_ai_paywall(
+            api,
+            settings,
+            offer=offer,
+            chat_id=chat_id,
+            reason="Unlock full shortlist and AI Apply Assistant with Telegram Stars.",
+        )
+    return
     pitch_lines = [
         f"{_offer_title(offer)}",
         "🔓 Unlock full access with Telegram Stars:",
@@ -1109,6 +1142,27 @@ def _send_preview_with_pitch(
     api.send_message(
         chat_id=chat_id,
         text="\n".join(pitch_lines),
+        reply_markup=_build_plans_keyboard(settings, offer=offer),
+    )
+
+
+def _send_ai_paywall(
+    api: TelegramBotApi,
+    settings: BotSettings,
+    *,
+    offer: OfferProfile,
+    chat_id: int,
+    reason: str = "",
+) -> None:
+    lines = [
+        f"🔒 {_offer_title(offer)}",
+        reason or "Unlock full access with Telegram Stars.",
+    ]
+    for item in _offer_plans(offer):
+        lines.append(f"• {_safe(item.get('title'))}: {int(item.get('stars') or 0)} XTR")
+    api.send_message(
+        chat_id=chat_id,
+        text="\n".join(lines),
         reply_markup=_build_plans_keyboard(settings, offer=offer),
     )
 
@@ -1182,30 +1236,34 @@ def _format_apply_analysis(
     strengths = [str(x).strip() for x in analysis.get("strengths") or [] if str(x).strip()]
     weaknesses = [str(x).strip() for x in analysis.get("weaknesses") or [] if str(x).strip()]
     lines = [
-        "Apply Assistant",
-        f"Pack: {_offer_title(offer)}",
-        f"Lead: {lead_index}. {_safe(lead.get('title'))}",
+        "🎯 Apply Assistant",
+        f"{_offer_title(offer)}",
+        "",
+        f"Lead #{lead_index}",
+        f"{_safe(lead.get('title'))}",
         f"Company: {_safe(lead.get('company')) or '-'}",
-        f"Stack focus: {stack_label}",
-        f"Match score: {int(analysis.get('match_score') or 0)}%",
-        f"Resume mode: {'temporary resume loaded' if resume_loaded else 'no resume, using pack/stack only'}",
+        f"Stack: {stack_label}",
+        f"Match: {int(analysis.get('match_score') or 0)}%",
+        f"Resume: {'CV loaded' if resume_loaded else 'No CV, using pack and stack only'}",
     ]
     if strengths:
         lines.append("")
-        lines.append("Strengths")
+        lines.append("Strong fit")
         for item in strengths[:5]:
-            lines.append(f"- {item}")
+            lines.append(f"• {item}")
     if weaknesses:
         lines.append("")
-        lines.append("Weaknesses")
+        lines.append("Gaps to watch")
         for item in weaknesses[:3]:
-            lines.append(f"- {item}")
+            lines.append(f"• {item}")
     pitch = _safe(analysis.get("pitch"))
     if pitch:
         lines.append("")
-        lines.append(f"Pitch: {pitch}")
+        lines.append("Suggested angle")
+        lines.append(pitch)
     salary_hint = _safe(analysis.get("salary_hint"))
     if salary_hint:
+        lines.append("")
         lines.append(f"Salary hint: {salary_hint}")
     return "\n".join(lines)
 
@@ -1221,6 +1279,23 @@ def _send_apply_package(
     chat_id: int,
     lead_index: int,
 ) -> None:
+    if not _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug):
+        _track_event(
+            conn,
+            user_id=user_id,
+            chat_id=chat_id,
+            offer_slug=offer.slug,
+            event_type="ai_paywall_shown",
+            details={"origin": "apply", "lead_index": int(lead_index)},
+        )
+        _send_ai_paywall(
+            api,
+            settings,
+            offer=offer,
+            chat_id=chat_id,
+            reason="Unlock full access to use AI match analysis and tailored cover notes.",
+        )
+        return
     lead, total = _resolve_shortlist_row(conn, settings, offer=offer, user_id=user_id, lead_index=lead_index)
     if not lead:
         api.send_message(
@@ -1242,8 +1317,8 @@ def _send_apply_package(
     api.send_message(
         chat_id=chat_id,
         text=(
-            "⏳ Analyzing this lead now.\n"
-            "I am checking the role against your current pack, stack, and temporary CV."
+            "⏳ Working on it.\n"
+            "I am analyzing this lead against your pack, stack, and temporary CV."
         ),
     )
     try:
@@ -1309,6 +1384,23 @@ def _send_cover_for_lead(
     chat_id: int,
     lead_id: str,
 ) -> None:
+    if not _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=offer.slug):
+        _track_event(
+            conn,
+            user_id=user_id,
+            chat_id=chat_id,
+            offer_slug=offer.slug,
+            event_type="ai_paywall_shown",
+            details={"origin": "cover", "lead_id": lead_id},
+        )
+        _send_ai_paywall(
+            api,
+            settings,
+            offer=offer,
+            chat_id=chat_id,
+            reason="Unlock full access to generate tailored cover notes with AI.",
+        )
+        return
     lead = get_offer_row_by_lead_id(conn, offer=offer, lead_id=lead_id)
     if not lead:
         api.send_message(chat_id=chat_id, text="That lead is no longer available in the current shortlist snapshot.")
@@ -1322,8 +1414,8 @@ def _send_cover_for_lead(
     api.send_message(
         chat_id=chat_id,
         text=(
-            "⏳ Generating your cover note now.\n"
-            "I am tailoring it to this lead and your temporary CV."
+            "⏳ Working on it.\n"
+            "I am generating a tailored cover note for this lead and your temporary CV."
         ),
     )
     try:
@@ -1359,12 +1451,19 @@ def _send_cover_for_lead(
         details={"lead_id": _safe(lead.get("lead_id"))},
     )
     intro = [
-        "Cover note",
-        f"Lead: {_safe(lead.get('title'))}",
+        "✉️ Tailored cover note",
+        f"{_safe(lead.get('title'))}",
         f"Company: {_safe(lead.get('company')) or '-'}",
-        f"Resume mode: {'temporary resume loaded' if resume_text else 'no resume, using pack/stack only'}",
+        f"Pack: {_offer_title(offer)}",
+        f"Stack: {_selected_stack_label(conn, user_id=user_id, offer=offer)}",
+        f"Resume: {'CV loaded' if resume_text else 'No CV, using pack and stack only'}",
         "",
-        _safe(cover.text),
+        "Draft",
+        "",
+        _format_cover_body(cover.text),
+        "",
+        "Next step",
+        "Review it, adjust if needed, then send it manually on the platform.",
     ]
     api.send_message(
         chat_id=chat_id,
@@ -1590,7 +1689,11 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
     elif data.startswith("cover:"):
         lead_id = data.split(":", 1)[1].strip()
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="cover_requested", details={"lead_id": lead_id})
-        api.answer_callback_query(callback_query_id=_safe(callback_query.get("id")), text="Generating cover")
+        has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
+        api.answer_callback_query(
+            callback_query_id=_safe(callback_query.get("id")),
+            text="Generating cover" if has_access else "Paid feature",
+        )
         _send_cover_for_lead(
             api,
             conn,
