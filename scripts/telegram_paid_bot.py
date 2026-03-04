@@ -443,9 +443,9 @@ def _format_card(
     )
     if has_access:
         if resume_loaded:
-            lines.append(f"Apply analysis: /apply {index}")
+            lines.append(f"Apply analysis: tap Analyze #{index} below")
         else:
-            lines.append("Apply analysis: upload your CV first with /cv")
+            lines.append(f"Apply analysis: upload CV first, then tap Analyze #{index}")
     else:
         lines.append("Apply analysis: paid feature")
     return "\n".join(lines)
@@ -754,6 +754,16 @@ def _collected_date_label(value: Any) -> str:
     return raw.split("T", 1)[0]
 
 
+def _extract_lead_index_from_card_text(text: str) -> int:
+    match = re.match(r"^\s*(\d+)\.\s+", _safe(text))
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except Exception:
+        return 0
+
+
 def _row_matches_stack(row: Dict[str, Any], *, stack_option: Dict[str, Any]) -> bool:
     tokens = [str(x).strip().lower() for x in stack_option.get("match_any") or [] if str(x).strip()]
     if not tokens:
@@ -798,14 +808,34 @@ def _apply_stack_preference(
     return chosen[: max(1, int(limit))], len(matched), broadened
 
 
-def _chunk_text(
+def _build_chunk_keyboard(
+    block: List[Dict[str, Any]],
+    *,
+    start_index: int,
+    has_access: bool,
+) -> Dict[str, Any] | None:
+    if not has_access:
+        return None
+    rows: List[List[Dict[str, str]]] = []
+    for idx, row in enumerate(block, start=start_index):
+        buttons: List[Dict[str, str]] = [
+            {"text": f"🎯 Analyze #{idx}", "callback_data": f"apply_idx:{idx}"}
+        ]
+        url = _safe(row.get("url"))
+        if url:
+            buttons.append({"text": f"🔗 Open #{idx}", "url": url})
+        rows.append(buttons)
+    return {"inline_keyboard": rows}
+
+
+def _chunk_blocks(
     rows: List[Dict[str, Any]],
     *,
     chunk_size: int,
     has_access: bool,
     resume_loaded: bool,
-) -> List[str]:
-    out: List[str] = []
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     size = max(1, int(chunk_size))
     for start in range(0, len(rows), size):
         block = rows[start:start + size]
@@ -818,7 +848,16 @@ def _chunk_text(
             )
             for idx, row in enumerate(block)
         ]
-        out.append("\n\n".join(parts))
+        out.append(
+            {
+                "text": "\n\n".join(parts),
+                "reply_markup": _build_chunk_keyboard(
+                    block,
+                    start_index=start + 1,
+                    has_access=has_access,
+                ),
+            }
+        )
     return out
 
 
@@ -1201,8 +1240,12 @@ def _send_feed(
     )
     sent = 1
     chunk_size = 3 if delivery_kind == "preview" else 4
-    for chunk in _chunk_text(rows, chunk_size=chunk_size, has_access=has_access, resume_loaded=resume_loaded):
-        api.send_message(chat_id=chat_id, text=chunk)
+    for block in _chunk_blocks(rows, chunk_size=chunk_size, has_access=has_access, resume_loaded=resume_loaded):
+        api.send_message(
+            chat_id=chat_id,
+            text=_safe(block.get("text")),
+            reply_markup=block.get("reply_markup"),
+        )
         sent += 1
     if has_access and resume_loaded:
         tip_lines = [
@@ -1951,6 +1994,37 @@ def _handle_callback(api: TelegramBotApi, conn, settings: BotSettings, *, callba
             chat_id=chat_id,
             lead_id=lead_id,
         )
+    elif data.startswith("apply_idx:"):
+        raw_index = data.split(":", 1)[1].strip()
+        try:
+            lead_index = int(raw_index or "0")
+        except Exception:
+            lead_index = 0
+        _track_event(
+            conn,
+            user_id=user_id,
+            chat_id=chat_id,
+            offer_slug=current_offer.slug,
+            event_type="apply_requested",
+            details={"lead_index": lead_index, "origin": "callback"},
+        )
+        api.answer_callback_query(
+            callback_query_id=_safe(callback_query.get("id")),
+            text=f"Analyze #{lead_index}" if lead_index > 0 else "Pick a valid lead",
+        )
+        if lead_index <= 0:
+            api.send_message(chat_id=chat_id, text="That lead number is invalid. Open Today again and pick a valid lead.")
+        else:
+            _send_apply_package(
+                api,
+                conn,
+                settings,
+                offer=current_offer,
+                user_id=user_id,
+                username=username,
+                chat_id=chat_id,
+                lead_index=lead_index,
+            )
     elif data.startswith("choose:"):
         chosen_slug = data.split(":", 1)[1].strip()
         chosen_offer = settings.offers.get(chosen_slug)
@@ -2186,11 +2260,20 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="apply_requested")
         raw_arg = _command_arg(text)
         try:
-            lead_index = int(raw_arg or "1")
+            lead_index = int(raw_arg or "0")
         except Exception:
             lead_index = 0
         if lead_index <= 0:
-            api.send_message(chat_id=chat_id, text="Use /apply N, for example /apply 1 or /apply 3.")
+            reply_text = _safe(dict(message.get("reply_to_message") or {}).get("text"))
+            lead_index = _extract_lead_index_from_card_text(reply_text)
+        if lead_index <= 0:
+            api.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Pick a specific lead first.\n"
+                    "Tap an Analyze button under a shortlist card, or use /apply N, for example /apply 5."
+                ),
+            )
         else:
             _send_apply_package(
                 api,
