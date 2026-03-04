@@ -1,115 +1,187 @@
-**Telegram Bot MVP**
+Telegram Bot Product Notes
+==========================
 
-**Recommended Name**
+Bot Identity
+------------
+
 - Display name: `Remote Work Hunter`
 - Recommended username: `RemoteWorkHunterBot`
-- Backup usernames:
-  - `RemoteRoleHunterBot`
-  - `JobAndGigHunterBot`
 
-**What This Bot Sells**
-- Paid access to filtered remote jobs, gigs, and contract leads.
-- The profession layer can be expanded later without changing the bot brand.
-- It does not sell "guaranteed jobs".
-- It does not auto-apply on behalf of the user.
+Product Positioning
+-------------------
 
-**BotFather Setup**
-- `/setname` -> `Remote Work Hunter`
-- `/setdescription` -> `Remote jobs and gigs finder.`
-- `/setabouttext` -> `Finds filtered remote jobs, gigs, and contract leads across selected professions.`
-- `/setuserpic` -> optional product icon
-- `/setcommands` ->
-  - `start - Open preview and menu`
-  - `today - Get today's shortlist`
-  - `plans - See paid plans`
-  - `status - Check access status`
-  - `terms - Terms and refund info`
-  - `support - Payment and bot support`
+This bot sells access to a filtered remote work feed.
 
-**Money Model**
-- Free preview: first 3 leads
-- Paid plan 1: `7-day pass` -> `39 XTR`
-- Paid plan 2: `30-day pass` -> `119 XTR`
-- Both are one-time Telegram Stars payments in MVP
-- Recurring subscriptions can be added later
+It is not:
 
-**Where Stars Payment Is Wired**
-- Invoice transport:
-  - [telegram_bot_api.py](D:/AIJobSearcher/src/telegram_bot_api.py#L86)
-  - `send_invoice(...)`
-  - uses `currency="XTR"`
-  - uses `provider_token=""`
-- Invoice creation in bot flow:
-  - [telegram_paid_bot.py](D:/AIJobSearcher/scripts/telegram_paid_bot.py#L264)
-  - `_send_plan_invoice(...)`
-- Pre-checkout validation:
-  - [telegram_paid_bot.py](D:/AIJobSearcher/scripts/telegram_paid_bot.py#L330)
-  - `_handle_pre_checkout(...)`
-- Successful payment handling:
-  - [telegram_paid_bot.py](D:/AIJobSearcher/scripts/telegram_paid_bot.py#L283)
-  - `_handle_successful_payment(...)`
+- a guaranteed job tool
+- a blind auto-apply bot
+- a generic chat assistant
 
-**Bot Commands**
+It is:
+
+- a profession-based remote work hunter
+- a shortlist delivery bot
+- a paid AI assist layer on top of that shortlist
+
+Current User Flow
+-----------------
+
+1. `/start`
+2. Choose profession pack
+3. Optionally choose stack
+4. Free user gets preview
+5. Paid user gets full shortlist
+6. Paid user with CV gets AI score per lead and AI apply support
+
+Commands
+--------
+
 - `/start`
-  - welcome text
-  - preview
-  - inline menu
+- `/choose`
+- `/stack`
+- `/sources`
 - `/today`
-  - if paid: full shortlist
-  - if not paid: preview + upsell
+- `/apply`
+- `/cv`
+- `/forgetcv`
 - `/plans`
-  - shows buttons for Stars payment
 - `/status`
-  - shows active access end date
 - `/terms`
-  - terms/refund/support text
 - `/support`
-  - payment support contact
+- `/adminstats`
 
-**Core Buttons**
-- `Preview`
-- `Today's shortlist`
-- `Unlock full shortlist`
-- `7-day pass - 39 XTR`
-- `30-day pass - 119 XTR`
+Current Access Rules
+--------------------
 
-**Data Needed In Env**
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_BOT_OFFER=qa_gig_hunter`
-- `TELEGRAM_ADMIN_CHAT_ID`
-- `TELEGRAM_SUPPORT_HANDLE`
-- `TELEGRAM_SUPPORT_TEXT`
-- `TELEGRAM_TERMS_URL`
-- `TELEGRAM_TERMS_TEXT`
-- `TELEGRAM_BOT_PHOTO_URL`
+Free users:
 
-Example env keys are in:
-- [.env.accounts.example](D:/AIJobSearcher/.env.accounts.example)
+- preview leads only
+- no AI score in shortlist
+- no AI apply analysis
+- no AI cover generation
 
-**DB Tables Added**
-- `bot_users`
-- `bot_subscriptions`
-- `bot_payments`
-- `bot_delivery_log`
+Paid users:
 
-Schema lives in:
-- [activity_db.py](D:/AIJobSearcher/src/activity_db.py#L5)
+- full shortlist
+- AI score shown per lead
+- AI apply analysis
+- tailored cover notes
 
-**Files Added For MVP**
-- [telegram_paid_bot.py](D:/AIJobSearcher/scripts/telegram_paid_bot.py)
-- [telegram_bot_api.py](D:/AIJobSearcher/src/telegram_bot_api.py)
-- [telegram_paid_store.py](D:/AIJobSearcher/src/telegram_paid_store.py)
-- [offer_feed.py](D:/AIJobSearcher/src/offer_feed.py)
+Privileged users:
 
-**How To Run Locally**
+- admins and free testers bypass payment checks
+
+AI Rules
+--------
+
+AI runs only when both conditions are true:
+
+1. the user has access
+2. a temporary CV is loaded
+
+If access exists but CV is missing:
+
+- the bot does not spend LLM tokens
+- the bot asks the user to upload CV first
+
+Shortlist Card Rules
+--------------------
+
+Free card:
+
+- title
+- platform
+- type
+- location
+- collected date
+- contact
+- why it fits
+- link
+- note that apply analysis is paid
+
+Paid card with CV:
+
+- all of the above
+- AI `Score`
+- `Apply analysis: /apply N`
+
+Apply Assistant
+---------------
+
+`/apply N` returns:
+
+- match score
+- strong fit bullets
+- gaps to watch
+- suggested angle
+- optional salary hint
+
+Cover generation returns:
+
+- tailored short cover note
+- based on the selected lead
+- based on the loaded temporary CV
+
+Resume Handling
+---------------
+
+Supported:
+
+- plain text
+- PDF
+- TXT
+- MD
+
+Rules:
+
+- stored only in temporary bot memory
+- not written to long-term DB storage
+- user can clear it with `/forgetcv`
+
+Money Model
+-----------
+
+Telegram Stars plans in current MVP:
+
+- `7-day pass` -> `39 XTR`
+- `30-day pass` -> `119 XTR`
+
+Current Wiring
+--------------
+
+Main files:
+
+- `scripts/telegram_paid_bot.py`
+- `src/telegram_bot_api.py`
+- `src/telegram_paid_store.py`
+- `src/apply_assistant.py`
+- `src/offer_feed.py`
+
+Payments:
+
+- Telegram Stars invoices
+- one-time access periods
+
+Local Run
+---------
+
 ```powershell
 python scripts/run_offer_pipeline.py --offer qa_gig_hunter
 python scripts/telegram_paid_bot.py --offer qa_gig_hunter
 ```
 
-**What Still Needs To Be Done Before Production**
-- Put real bot token into env
-- Set support and terms text
-- Run the offer pipeline on a schedule
-- Add Render deploy/start command
-- Add manual admin refund process
+Combined Background Loop
+------------------------
+
+```powershell
+python scripts/run_bot_stack.py --default-offer qa_gig_hunter --short-limit 12 --refresh-hours 6
+```
+
+What Still Is Not Included
+--------------------------
+
+- final third-party platform submit automation
+- blind mass auto-apply
+- permanent CV profile storage
+- mature web dashboard for bot operators
