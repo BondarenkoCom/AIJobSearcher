@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Snake 2026</title>
+    <meta
+      name="description"
+      content="Telegram WebApp mini-game: collect jobs, dodge layoffs, and survive the 2026 hunt."
+    />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./snake.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Remote Work Hunter</p>
+          <h1>Snake: Job Hunt 2026</h1>
+        </div>
+        <p class="topbar__hint">Collect offers. Dodge ghost jobs and layoffs.</p>
+      </header>
+
+      <section class="hud" aria-label="Game stats">
+        <article class="stat">
+          <span class="stat__label">Salary</span>
+          <strong class="stat__value" id="salaryValue">$100</strong>
+        </article>
+        <article class="stat">
+          <span class="stat__label">XP</span>
+          <strong class="stat__value" id="xpValue">0</strong>
+        </article>
+        <article class="stat">
+          <span class="stat__label">Burnout</span>
+          <strong class="stat__value" id="burnoutValue">0%</strong>
+        </article>
+        <article class="stat">
+          <span class="stat__label">Best</span>
+          <strong class="stat__value" id="bestValue">$100</strong>
+        </article>
+      </section>
+
+      <section class="boardCard">
+        <div class="boardCard__top">
+          <p class="boardCard__status" id="statusText">Collect jobs. Avoid layoffs. Keep moving.</p>
+          <p class="boardCard__meta" id="metaText">Pace +0 | Bonus x1</p>
+        </div>
+
+        <div class="canvasWrap" id="canvasWrap">
+          <canvas
+            id="gameBoard"
+            width="480"
+            height="480"
+            aria-label="Job Snake board"
+          ></canvas>
+
+          <div class="overlay" id="overlay" hidden>
+            <div class="overlay__panel">
+              <p class="overlay__eyebrow" id="overlayEyebrow">Paused</p>
+              <h2 class="overlay__title" id="overlayTitle">Catch your breath.</h2>
+              <p class="overlay__text" id="overlayText">Press pause again or tap resume.</p>
+              <button class="button button--primary" id="overlayAction" type="button">Resume</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="button button--primary" id="pauseButton" type="button">Pause</button>
+          <button class="button" id="restartButton" type="button">Restart</button>
+        </div>
+      </section>
+
+      <section class="legend" aria-label="Item legend">
+        <span class="legend__item"><span class="legend__emoji">💼</span> +$10 and grow</span>
+        <span class="legend__item"><span class="legend__emoji">🧠</span> 3 jobs at x2 salary</span>
+        <span class="legend__item"><span class="legend__emoji">🤖</span> speed up</span>
+        <span class="legend__item"><span class="legend__emoji">👻</span> shrink and lose $10</span>
+        <span class="legend__item"><span class="legend__emoji">📉</span> lose half the snake</span>
+      </section>
+
+      <section class="controls" aria-label="Touch controls">
+        <div class="pad">
+          <button class="button button--icon pad__up" data-dir="up" type="button" aria-label="Move up">↑</button>
+          <button class="button button--icon pad__left" data-dir="left" type="button" aria-label="Move left">←</button>
+          <button class="button button--icon pad__right" data-dir="right" type="button" aria-label="Move right">→</button>
+          <button class="button button--icon pad__down" data-dir="down" type="button" aria-label="Move down">↓</button>
+        </div>
+        <p class="controls__hint">Arrow keys / WASD, swipe on the board, or use the pad.</p>
+      </section>
+    </main>
+
+    <script type="module" src="./snake-app.js"></script>
+  </body>
+</html>

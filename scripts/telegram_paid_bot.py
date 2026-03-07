@@ -55,6 +55,7 @@ class BotSettings:
     poll_timeout: int
     sleep_sec: float
     photo_url: str
+    webapp_url: str
     commands: List[Dict[str, str]]
     free_user_ids: Set[int]
     free_usernames: Set[str]
@@ -385,12 +386,36 @@ def _main_menu_keyboard(settings: BotSettings, *, offer: OfferProfile, has_acces
         [{"text": "Profession", "callback_data": "choose_menu"}, {"text": "Stack", "callback_data": "stack_menu"}],
         [{"text": "Preview", "callback_data": "preview"}, {"text": "CV", "callback_data": "cv_menu"}],
     ]
+    if _safe(settings.webapp_url):
+        rows.append([{"text": "Play Job Snake", "web_app": {"url": _safe(settings.webapp_url)}}])
     if has_access:
         rows.append([{"text": "Today's shortlist", "callback_data": "today"}, {"text": "Sources", "callback_data": "sources"}])
         rows.append([{"text": "Plans", "callback_data": "plans"}])
     else:
         rows.append([{"text": "Unlock full shortlist", "callback_data": "plans"}, {"text": "Sources", "callback_data": "sources"}])
     return {"inline_keyboard": rows}
+
+
+def _snake_webapp_keyboard(settings: BotSettings) -> Dict[str, Any] | None:
+    url = _safe(settings.webapp_url)
+    if not url:
+        return None
+    return {"inline_keyboard": [[{"text": "Play Job Snake", "web_app": {"url": url}}]]}
+
+
+def _send_snake_webapp(api: TelegramBotApi, settings: BotSettings, *, chat_id: int) -> None:
+    keyboard = _snake_webapp_keyboard(settings)
+    if keyboard is None:
+        api.send_message(
+            chat_id=chat_id,
+            text="Job Snake is not configured yet. Set TELEGRAM_WEBAPP_URL to the public HTTPS URL first.",
+        )
+        return
+    api.send_message(
+        chat_id=chat_id,
+        text="Job Snake is ready.\nOpen the WebApp below.",
+        reply_markup=keyboard,
+    )
 
 
 def _why_selected(row: Dict[str, Any]) -> str:
@@ -2322,7 +2347,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}\n"
             f"{_resume_status_line(user_id=user_id)}\n"
             "I send filtered remote work leads, not generic chat.\n"
-            "Use /choose to switch profession packs, /stack to focus the stack, tap CV to add your resume, /today for the shortlist, /apply 1 for AI analysis, or /plans to unlock full access."
+            "Use /choose to switch profession packs, /stack to focus the stack, tap CV to add your resume, /today for the shortlist, /play for Job Snake, /apply 1 for AI analysis, or /plans to unlock full access."
         )
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         api.send_message(
@@ -2360,6 +2385,10 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             )
         else:
             _send_preview_with_pitch(api, conn, settings, offer=current_offer, user_id=user_id, username=username, chat_id=chat_id)
+    elif command == "/play":
+        _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="play_opened")
+        _commit_quietly(conn)
+        _send_snake_webapp(api, settings, chat_id=chat_id)
     elif command == "/apply":
         _track_event(conn, user_id=user_id, chat_id=chat_id, offer_slug=current_offer.slug, event_type="apply_requested")
         _commit_quietly(conn)
@@ -2494,7 +2523,7 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             return
         api.send_message(
             chat_id=chat_id,
-            text="Unknown command. Try /choose, /stack, /sources, /today, /apply, /cv, /forgetcv, /plans, /status, /terms, or /support.",
+            text="Unknown command. Try /choose, /stack, /sources, /today, /play, /apply, /cv, /forgetcv, /plans, /status, /terms, or /support.",
             reply_markup=_main_menu_keyboard(
                 settings,
                 offer=current_offer,
@@ -2552,6 +2581,7 @@ def _load_settings(args) -> BotSettings:
         poll_timeout=max(10, int(args.poll_timeout)),
         sleep_sec=max(0.2, float(args.sleep_sec)),
         photo_url=_safe(os.getenv("TELEGRAM_BOT_PHOTO_URL")),
+        webapp_url=_safe(os.getenv("TELEGRAM_WEBAPP_URL")),
         commands=list(bot_cfg.get("commands") or []),
         free_user_ids=free_user_ids,
         free_usernames=free_usernames,

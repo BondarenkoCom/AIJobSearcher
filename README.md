@@ -153,6 +153,16 @@ Run The Telegram Bot Locally
 .\.venv\Scripts\python.exe scripts\telegram_paid_bot.py --offer qa_gig_hunter
 ```
 
+Run The Snake Web App Locally
+-----------------------------
+
+```powershell
+.\.venv\Scripts\python.exe scripts\snake_webapp_server.py --port 8790
+```
+
+Set `TELEGRAM_WEBAPP_URL` to the public HTTPS URL that serves `/snake/`.
+For local Telegram testing, use a tunnel and point the bot button to that HTTPS URL.
+
 Run The Combined Bot Stack
 --------------------------
 

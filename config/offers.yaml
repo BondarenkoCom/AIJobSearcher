@@ -21,6 +21,8 @@ _shared:
         description: "See shortlist sources"
       - cmd: "today"
         description: "Get today's shortlist"
+      - cmd: "play"
+        description: "Open the Snake WebApp"
       - cmd: "apply"
         description: "AI analyze shortlist lead"
       - cmd: "cv"
