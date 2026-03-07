@@ -22,6 +22,12 @@ class SnakeWebAppHandler(SimpleHTTPRequestHandler):
         self.send_error(404, "Directory listing is disabled.")
         return None
 
+    def end_headers(self) -> None:  # noqa: D401
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def _send_json(self, obj: Any, status: int = 200) -> None:
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(status)

@@ -8,7 +8,7 @@ import {
   restartState,
   stepGame,
   togglePause,
-} from "./snake-core.js";
+} from "./snake-core.js?v=20260308c";
 
 const canvas = document.getElementById("gameBoard");
 const ctx = canvas.getContext("2d");
@@ -231,8 +231,8 @@ function render() {
 function renderOverlay() {
   if (state.status === "gameover") {
     overlay.hidden = false;
-    overlayEyebrow.textContent = "Run Over";
-    overlayTitle.textContent = "You survived the job market.";
+    overlayEyebrow.textContent = "Game Over";
+    overlayTitle.textContent = "Pipeline collapsed.";
     overlayText.textContent = [
       `Salary: ${formatSalary(state.salary)}`,
       `Experience: ${state.experience}`,
@@ -249,15 +249,6 @@ function renderOverlay() {
     overlayTitle.textContent = "Catch your breath.";
     overlayText.textContent = "Resume when you are ready to chase the next offer.";
     overlayAction.textContent = "Resume";
-    return;
-  }
-
-  if (state.status === "ready") {
-    overlay.hidden = false;
-    overlayEyebrow.textContent = "Ready";
-    overlayTitle.textContent = "Open the hunt.";
-    overlayText.textContent = "Start with the button, swipe on the board, or press an arrow key.";
-    overlayAction.textContent = "Start";
     return;
   }
 

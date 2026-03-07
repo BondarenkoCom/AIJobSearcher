@@ -10,7 +10,7 @@ const START_SNAKE = [
   { x: 8, y: 10 },
 ];
 const MIN_SNAKE_LENGTH = 2;
-const BURNOUT_PER_STEP = 0.35;
+const BURNOUT_PER_STEP = 0.1;
 const SKILL_BOOST_JOBS = 3;
 const SPECIAL_SPAWN_CHANCE = 0.18;
 const SPECIAL_WEIGHTS = [
@@ -70,6 +70,16 @@ function roll(randomFn) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function wrapCoordinate(value) {
+  if (value < 0) {
+    return GRID_SIZE - 1;
+  }
+  if (value >= GRID_SIZE) {
+    return 0;
+  }
+  return value;
 }
 
 function createBaseState() {
@@ -219,7 +229,7 @@ export function togglePause(state) {
     return {
       ...state,
       status: "running",
-      message: "The hunt is live.",
+      message: "The hunt is live. Wrap through the edges.",
     };
   }
 
@@ -247,25 +257,9 @@ export function stepGame(state, randomFn = Math.random) {
   const vector = DIRECTION_VECTORS[direction];
   const currentHead = state.snake[0];
   const nextHead = {
-    x: currentHead.x + vector.x,
-    y: currentHead.y + vector.y,
+    x: wrapCoordinate(currentHead.x + vector.x),
+    y: wrapCoordinate(currentHead.y + vector.y),
   };
-
-  if (
-    nextHead.x < 0 ||
-    nextHead.x >= GRID_SIZE ||
-    nextHead.y < 0 ||
-    nextHead.y >= GRID_SIZE
-  ) {
-    return finishGame(
-      {
-        ...state,
-        direction,
-        queuedDirection: direction,
-      },
-      "Boundary hit. The market boxed you in."
-    );
-  }
 
   const ateJob = sameCell(nextHead, state.job);
   const bodyToCheck = state.snake.slice(0, ateJob ? state.snake.length : state.snake.length - 1);
@@ -293,13 +287,13 @@ export function stepGame(state, randomFn = Math.random) {
   let tickMs = state.tickMs;
   let job = state.job ? { ...state.job } : null;
   let special = state.special ? { ...state.special } : null;
-  let message = "Keep moving. Idle time is expensive.";
+  let message = "Keep moving. The walls loop.";
 
   if (ateJob) {
     const salaryGain = skillBoostJobs > 0 ? 20 : 10;
     salary += salaryGain;
     experience += 1;
-    burnout = clamp(burnout + 2, 0, 100);
+    burnout = clamp(burnout + 1, 0, 100);
     if (skillBoostJobs > 0) {
       skillBoostJobs -= 1;
     }
@@ -316,16 +310,16 @@ export function stepGame(state, randomFn = Math.random) {
     } else if (special.type === "ai") {
       speedLevel += 1;
       tickMs = Math.max(MIN_TICK_MS, BASE_TICK_MS - speedLevel * 10);
-      burnout = clamp(burnout + 4, 0, 100);
+      burnout = clamp(burnout + 3, 0, 100);
       message = "AI boost: faster loop, higher pressure.";
     } else if (special.type === "ghost") {
       salary = Math.max(0, salary - 10);
-      burnout = clamp(burnout + 6, 0, 100);
+      burnout = clamp(burnout + 5, 0, 100);
       snake = trimSnake(snake, snake.length - 1);
       message = "Ghost job: -$10 and one segment gone.";
     } else if (special.type === "layoff") {
       salary = Math.max(0, salary - 30);
-      burnout = clamp(burnout + 12, 0, 100);
+      burnout = clamp(burnout + 10, 0, 100);
       snake = trimSnake(snake, Math.ceil(snake.length / 2));
       message = "Layoff event: half the pipeline is gone.";
     }
@@ -348,10 +342,6 @@ export function stepGame(state, randomFn = Math.random) {
     turn: state.turn + 1,
     message,
   };
-
-  if (nextState.burnout >= 100) {
-    return finishGame(nextState, "Burnout hit 100%. Close the tabs and reset.");
-  }
 
   if (!nextState.job) {
     nextState = {

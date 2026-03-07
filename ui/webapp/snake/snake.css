@@ -40,9 +40,9 @@ canvas {
 }
 
 .shell {
-  width: min(100%, 760px);
+  width: min(100%, 860px);
   margin: 0 auto;
-  padding: 12px 14px 22px;
+  padding: 10px 12px 18px;
 }
 
 .topbar {
@@ -124,7 +124,7 @@ h1 {
 
 .canvasWrap {
   position: relative;
-  width: min(100%, 400px);
+  width: min(100%, 460px);
   margin: 0 auto;
   border: 1px solid rgba(32, 50, 74, 0.95);
   background: linear-gradient(180deg, rgba(6, 10, 18, 0.78), rgba(10, 16, 32, 0.78));
@@ -144,6 +144,10 @@ h1 {
   place-items: center;
   padding: 16px;
   background: rgba(7, 10, 16, 0.72);
+}
+
+.overlay[hidden] {
+  display: none !important;
 }
 
 .overlay__panel {
@@ -270,7 +274,7 @@ h1 {
 
 @media (max-width: 720px) {
   .shell {
-    padding-inline: 10px;
+    padding: 6px 4px 12px;
   }
 
   .topbar,
@@ -279,20 +283,76 @@ h1 {
     align-items: start;
   }
 
+  .topbar {
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .topbar__hint,
+  .controls__hint {
+    display: none;
+  }
+
   .hud {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .stat {
+    padding: 7px;
+  }
+
+  .boardCard {
+    padding: 4px;
+  }
+
+  .boardCard__top {
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  .boardCard__status {
+    font-size: 13px;
+  }
+
+  .canvasWrap {
+    width: min(100%, calc(100vw - 10px));
   }
 
   .controls {
     display: block;
+    margin-top: 8px;
+    padding: 10px 8px;
   }
 
   .button {
     min-width: 0;
     flex: 1 1 0;
+    padding: 10px 12px;
   }
 
   .actions {
     width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .legend {
+    display: none;
+  }
+
+  .button--icon {
+    width: 60px;
+    height: 46px;
+    font-size: 22px;
+  }
+
+  .pad {
+    width: 192px;
+    grid-template-columns: repeat(3, 60px);
+    grid-template-rows: repeat(2, 46px);
   }
 }
