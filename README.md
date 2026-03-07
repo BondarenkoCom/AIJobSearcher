@@ -165,7 +165,7 @@ For local Telegram testing, use a tunnel and point the bot button to that HTTPS 
 If `TELEGRAM_WEBAPP_URL` is empty, the bot falls back to:
 
 1. `REMOTE_WORK_HUNTER_PUBLIC_BASE_URL + /snake/`
-2. public jsDelivr CDN URL for this repo
+2. public `raw.githack.com` URL for this repo
 
 Run The Combined Bot Stack
 --------------------------

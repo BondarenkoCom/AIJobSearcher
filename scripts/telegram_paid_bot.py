@@ -76,7 +76,7 @@ _APPLY_ASSISTANT: ApplyAssistant | None = None
 _AI_SCORE_TTL_SEC = 2 * 60 * 60
 _AI_SCORE_CACHE: Dict[str, Dict[str, Any]] = {}
 _DEFAULT_SNAKE_WEBAPP_URL = (
-    "https://cdn.jsdelivr.net/gh/BondarenkoCom/AIJobSearcher@master/ui/webapp/snake/index.html"
+    "https://raw.githack.com/BondarenkoCom/AIJobSearcher/master/ui/webapp/snake/index.html"
 )
 
 
