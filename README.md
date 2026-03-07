@@ -162,6 +162,10 @@ Run The Snake Web App Locally
 
 Set `TELEGRAM_WEBAPP_URL` to the public HTTPS URL that serves `/snake/`.
 For local Telegram testing, use a tunnel and point the bot button to that HTTPS URL.
+If `TELEGRAM_WEBAPP_URL` is empty, the bot falls back to:
+
+1. `REMOTE_WORK_HUNTER_PUBLIC_BASE_URL + /snake/`
+2. public jsDelivr CDN URL for this repo
 
 Run The Combined Bot Stack
 --------------------------
@@ -169,6 +173,8 @@ Run The Combined Bot Stack
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_bot_stack.py --default-offer qa_gig_hunter --short-limit 12 --refresh-hours 6
 ```
+
+`run_bot_stack.py` now starts the Snake Web App server too by default.
 
 Telegram Product Model
 ----------------------

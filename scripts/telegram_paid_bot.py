@@ -75,6 +75,9 @@ _RESUME_SESSIONS: Dict[int, ResumeSession] = {}
 _APPLY_ASSISTANT: ApplyAssistant | None = None
 _AI_SCORE_TTL_SEC = 2 * 60 * 60
 _AI_SCORE_CACHE: Dict[str, Dict[str, Any]] = {}
+_DEFAULT_SNAKE_WEBAPP_URL = (
+    "https://cdn.jsdelivr.net/gh/BondarenkoCom/AIJobSearcher@master/ui/webapp/snake/index.html"
+)
 
 
 def _int_env(name: str, default: int) -> int:
@@ -89,6 +92,21 @@ def _int_env(name: str, default: int) -> int:
 
 def _safe(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _resolve_webapp_url_from_env() -> str:
+    direct = _safe(os.getenv("TELEGRAM_WEBAPP_URL"))
+    if direct:
+        return direct
+
+    public_base = _safe(os.getenv("REMOTE_WORK_HUNTER_PUBLIC_BASE_URL"))
+    if public_base:
+        lower = public_base.lower()
+        if lower.endswith(".html") or "/snake" in lower:
+            return public_base
+        return public_base.rstrip("/") + "/snake/"
+
+    return _DEFAULT_SNAKE_WEBAPP_URL
 
 
 def _display_name(*, username: str = "", first_name: str = "") -> str:
@@ -386,13 +404,15 @@ def _main_menu_keyboard(settings: BotSettings, *, offer: OfferProfile, has_acces
         [{"text": "Profession", "callback_data": "choose_menu"}, {"text": "Stack", "callback_data": "stack_menu"}],
         [{"text": "Preview", "callback_data": "preview"}, {"text": "CV", "callback_data": "cv_menu"}],
     ]
-    if _safe(settings.webapp_url):
-        rows.append([{"text": "Play Job Snake", "web_app": {"url": _safe(settings.webapp_url)}}])
     if has_access:
         rows.append([{"text": "Today's shortlist", "callback_data": "today"}, {"text": "Sources", "callback_data": "sources"}])
-        rows.append([{"text": "Plans", "callback_data": "plans"}])
     else:
-        rows.append([{"text": "Unlock full shortlist", "callback_data": "plans"}, {"text": "Sources", "callback_data": "sources"}])
+        rows.append([{"text": "Sources", "callback_data": "sources"}])
+
+    plans_row: List[Dict[str, Any]] = [{"text": "Plans", "callback_data": "plans"}]
+    if _safe(settings.webapp_url):
+        plans_row.append({"text": "Snake", "web_app": {"url": _safe(settings.webapp_url)}})
+    rows.append(plans_row)
     return {"inline_keyboard": rows}
 
 
@@ -408,12 +428,12 @@ def _send_snake_webapp(api: TelegramBotApi, settings: BotSettings, *, chat_id: i
     if keyboard is None:
         api.send_message(
             chat_id=chat_id,
-            text="Job Snake is not configured yet. Set TELEGRAM_WEBAPP_URL to the public HTTPS URL first.",
+            text="Job Snake is unavailable right now.",
         )
         return
     api.send_message(
         chat_id=chat_id,
-        text="Job Snake is ready.\nOpen the WebApp below.",
+        text="Open Job Snake.",
         reply_markup=keyboard,
     )
 
@@ -2347,7 +2367,15 @@ def _handle_message(api: TelegramBotApi, conn, settings: BotSettings, *, message
             f"Current stack: {_selected_stack_label(conn, user_id=user_id, offer=current_offer)}\n"
             f"{_resume_status_line(user_id=user_id)}\n"
             "I send filtered remote work leads, not generic chat.\n"
-            "Use /choose to switch profession packs, /stack to focus the stack, tap CV to add your resume, /today for the shortlist, /play for Job Snake, /apply 1 for AI analysis, or /plans to unlock full access."
+            "\n"
+            "Main commands:\n"
+            "/choose - switch profession pack\n"
+            "/stack - focus stack\n"
+            "/today - open shortlist\n"
+            "/play - open Job Snake\n"
+            "/cv - load temporary CV\n"
+            "/apply 1 - run AI analysis\n"
+            "/plans - open billing and access"
         )
         has_access = _has_offer_access(settings, conn, user_id=user_id, username=username, offer_slug=current_offer.slug)
         api.send_message(
@@ -2581,7 +2609,7 @@ def _load_settings(args) -> BotSettings:
         poll_timeout=max(10, int(args.poll_timeout)),
         sleep_sec=max(0.2, float(args.sleep_sec)),
         photo_url=_safe(os.getenv("TELEGRAM_BOT_PHOTO_URL")),
-        webapp_url=_safe(os.getenv("TELEGRAM_WEBAPP_URL")),
+        webapp_url=_resolve_webapp_url_from_env(),
         commands=list(bot_cfg.get("commands") or []),
         free_user_ids=free_user_ids,
         free_usernames=free_usernames,

@@ -101,6 +101,16 @@ def _run_pipeline(offer_slug: str, short_limit: int, *, with_optional: bool) -> 
     return int(proc.returncode)
 
 
+def _int_env(name: str, default: int) -> int:
+    raw = _safe(os.getenv(name))
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
 def _refresh_loop(
     *,
     offers: List[str],
@@ -168,12 +178,27 @@ def main() -> int:
 
     stop_event = threading.Event()
     refresh_thread = None
+    snake_proc = None
     bot_cmd = [
         sys.executable,
         str(ROOT / "scripts" / "telegram_paid_bot.py"),
         "--offer",
         default_offer,
     ]
+    if _bool_env("REMOTE_WORK_HUNTER_SNAKE_AUTOSTART", True):
+        snake_host = _safe(os.getenv("REMOTE_WORK_HUNTER_SNAKE_HOST")) or "127.0.0.1"
+        snake_port = max(1, _int_env("REMOTE_WORK_HUNTER_SNAKE_PORT", 8790))
+        snake_cmd = [
+            sys.executable,
+            str(ROOT / "scripts" / "snake_webapp_server.py"),
+            "--host",
+            snake_host,
+            "--port",
+            str(snake_port),
+            "--no-open",
+        ]
+        print(f"[bot-stack] snake webapp start host={snake_host} port={snake_port}")
+        snake_proc = subprocess.Popen(snake_cmd, cwd=str(ROOT))
     print(f"[bot-stack] bot start default_offer={default_offer}")
     proc = subprocess.Popen(bot_cmd, cwd=str(ROOT))
     if not args.skip_refresh_loop:
@@ -200,6 +225,11 @@ def main() -> int:
         if proc.poll() is None:
             try:
                 proc.terminate()
+            except Exception:
+                pass
+        if snake_proc is not None and snake_proc.poll() is None:
+            try:
+                snake_proc.terminate()
             except Exception:
                 pass
         if refresh_thread is not None and refresh_thread.is_alive():
