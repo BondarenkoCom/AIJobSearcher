@@ -9,7 +9,7 @@
       content="Telegram WebApp mini-game: collect jobs, dodge layoffs, and survive the 2026 hunt."
     />
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./snake.css?v=20260308c" />
+    <link rel="stylesheet" href="./snake.css?v=20260308f" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
@@ -80,16 +80,14 @@
       </section>
 
       <section class="controls" aria-label="Touch controls">
-        <div class="pad">
-          <button class="button button--icon pad__up" data-dir="up" type="button" aria-label="Move up">↑</button>
-          <button class="button button--icon pad__left" data-dir="left" type="button" aria-label="Move left">←</button>
-          <button class="button button--icon pad__right" data-dir="right" type="button" aria-label="Move right">→</button>
-          <button class="button button--icon pad__down" data-dir="down" type="button" aria-label="Move down">↓</button>
+        <div class="turnPad">
+          <button class="button button--turn" data-turn="left" type="button" aria-label="Turn left">Turn Left</button>
+          <button class="button button--turn" data-turn="right" type="button" aria-label="Turn right">Turn Right</button>
         </div>
-        <p class="controls__hint">Arrow keys / WASD, swipe on the board, or use the pad.</p>
+        <p class="controls__hint">Swipe on the board or use left/right turns.</p>
       </section>
     </main>
 
-    <script type="module" src="./snake-app.js?v=20260308c"></script>
+    <script type="module" src="./snake-app.js?v=20260308f"></script>
   </body>
 </html>

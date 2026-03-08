@@ -124,7 +124,7 @@ h1 {
 
 .canvasWrap {
   position: relative;
-  width: min(100%, 460px);
+  width: min(100%, var(--board-size, 460px));
   margin: 0 auto;
   border: 1px solid rgba(32, 50, 74, 0.95);
   background: linear-gradient(180deg, rgba(6, 10, 18, 0.78), rgba(10, 16, 32, 0.78));
@@ -199,14 +199,6 @@ h1 {
   background: linear-gradient(180deg, rgba(25, 60, 110, 0.35), rgba(10, 16, 32, 0.72));
 }
 
-.button--icon {
-  min-width: 0;
-  width: 68px;
-  height: 52px;
-  padding: 0;
-  font-size: 24px;
-}
-
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -239,32 +231,15 @@ h1 {
   padding: 14px;
 }
 
-.pad {
-  width: 216px;
-  margin: 0 auto;
+.turnPad {
   display: grid;
-  grid-template-columns: repeat(3, 68px);
-  grid-template-rows: repeat(2, 52px);
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.pad__up {
-  grid-column: 2;
-}
-
-.pad__left {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.pad__right {
-  grid-column: 3;
-  grid-row: 2;
-}
-
-.pad__down {
-  grid-column: 2;
-  grid-row: 2;
+.button--turn {
+  min-width: 0;
+  padding: 12px 10px;
 }
 
 .controls__hint {
@@ -317,7 +292,7 @@ h1 {
   }
 
   .canvasWrap {
-    width: min(100%, calc(100vw - 10px));
+    width: min(100%, var(--board-size, calc(100vw - 10px)));
   }
 
   .controls {
@@ -329,7 +304,7 @@ h1 {
   .button {
     min-width: 0;
     flex: 1 1 0;
-    padding: 10px 12px;
+    padding: 9px 11px;
   }
 
   .actions {
@@ -344,15 +319,12 @@ h1 {
     display: none;
   }
 
-  .button--icon {
-    width: 60px;
-    height: 46px;
-    font-size: 22px;
+  .turnPad {
+    gap: 6px;
   }
 
-  .pad {
-    width: 192px;
-    grid-template-columns: repeat(3, 60px);
-    grid-template-rows: repeat(2, 46px);
+  .button--turn {
+    padding: 9px 8px;
+    font-size: 14px;
   }
 }

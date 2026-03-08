@@ -21,11 +21,11 @@ const SPECIAL_WEIGHTS = [
 ];
 
 export const ENTITY_META = {
-  job: { emoji: "💼", label: "Job", tint: "#4ea3ff" },
-  skill: { emoji: "🧠", label: "Skill", tint: "#78f0ff" },
-  ai: { emoji: "🤖", label: "AI", tint: "#ffcc7a" },
-  ghost: { emoji: "👻", label: "Ghost Job", tint: "#ff5f70" },
-  layoff: { emoji: "📉", label: "Layoff", tint: "#ff8b6b" },
+  job: { emoji: "💼", label: "Job", tint: "#62d8f5" },
+  skill: { emoji: "🧠", label: "Skill", tint: "#9af8ff" },
+  ai: { emoji: "🤖", label: "AI", tint: "#ffe07d" },
+  ghost: { emoji: "👻", label: "Ghost Job", tint: "#ff93c7" },
+  layoff: { emoji: "📉", label: "Layoff", tint: "#ffb48d" },
 };
 
 const DIRECTION_VECTORS = {
@@ -40,6 +40,13 @@ const OPPOSITES = {
   down: "up",
   left: "right",
   right: "left",
+};
+
+const TURN_MAP = {
+  up: { left: "left", right: "right" },
+  right: { left: "up", right: "down" },
+  down: { left: "right", right: "left" },
+  left: { left: "down", right: "up" },
 };
 
 function cloneCell(cell) {
@@ -98,7 +105,7 @@ function createBaseState() {
     status: "ready",
     reason: "",
     turn: 0,
-    message: "Tap Start, swipe, or press an arrow key to begin.",
+    message: "Tap Start, swipe, or use the turn buttons.",
   };
 }
 
@@ -218,6 +225,15 @@ export function queueDirection(state, nextDirection) {
     ...state,
     queuedDirection: nextDirection,
   };
+}
+
+export function queueTurn(state, turnSide) {
+  const currentDirection = state.queuedDirection || state.direction;
+  const nextDirection = TURN_MAP[currentDirection]?.[turnSide];
+  if (!nextDirection) {
+    return state;
+  }
+  return queueDirection(state, nextDirection);
 }
 
 export function togglePause(state) {

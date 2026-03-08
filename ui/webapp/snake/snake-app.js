@@ -5,10 +5,11 @@ import {
   ENTITY_META,
   createInitialState,
   queueDirection,
+  queueTurn,
   restartState,
   stepGame,
   togglePause,
-} from "./snake-core.js?v=20260308c";
+} from "./snake-core.js?v=20260308e";
 
 const canvas = document.getElementById("gameBoard");
 const ctx = canvas.getContext("2d");
@@ -26,7 +27,7 @@ const overlayEyebrow = document.getElementById("overlayEyebrow");
 const overlayTitle = document.getElementById("overlayTitle");
 const overlayText = document.getElementById("overlayText");
 const overlayAction = document.getElementById("overlayAction");
-const directionButtons = [...document.querySelectorAll("[data-dir]")];
+const turnButtons = [...document.querySelectorAll("[data-turn]")];
 
 const BEST_SCORE_KEY = "job-snake-best-salary";
 const randomFn = () => Math.random();
@@ -35,6 +36,7 @@ let state = createInitialState(randomFn);
 let bestSalary = loadBestSalary();
 let timerId = 0;
 let touchStart = null;
+let boardSyncFrame = 0;
 
 window.__jobSnakeDebug = {
   getState: () => cloneState(state),
@@ -70,16 +72,19 @@ function initTelegramShell() {
   if (theme.button_color) {
     document.documentElement.style.setProperty("--blue", theme.button_color);
   }
+
+  tg.onEvent?.("viewportChanged", scheduleBoardSync);
 }
 
 function attachEvents() {
   window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("resize", scheduleBoardSync);
   pauseButton.addEventListener("click", handlePauseToggle);
   restartButton.addEventListener("click", handleRestart);
   overlayAction.addEventListener("click", handleOverlayAction);
 
-  for (const button of directionButtons) {
-    button.addEventListener("click", () => queueInput(button.dataset.dir));
+  for (const button of turnButtons) {
+    button.addEventListener("click", () => queueTurnInput(button.dataset.turn));
   }
 
   canvasWrap.addEventListener(
@@ -180,6 +185,15 @@ function queueInput(direction) {
   scheduleNextTick();
 }
 
+function queueTurnInput(turnSide) {
+  state = queueTurn(state, turnSide);
+  if (state.status === "ready" || state.status === "paused") {
+    state = togglePause(state);
+  }
+  render();
+  scheduleNextTick();
+}
+
 function scheduleNextTick() {
   window.clearTimeout(timerId);
   if (state.status !== "running") {
@@ -226,6 +240,7 @@ function render() {
 
   renderOverlay();
   renderBoard();
+  scheduleBoardSync();
 }
 
 function renderOverlay() {
@@ -294,13 +309,22 @@ function drawEntity(entity) {
   const x = entity.x * CELL_SIZE;
   const y = entity.y * CELL_SIZE;
 
-  ctx.fillStyle = `${meta.tint}22`;
-  ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
-
+  ctx.save();
+  ctx.fillStyle = meta.tint;
+  ctx.shadowColor = `${meta.tint}cc`;
+  ctx.shadowBlur = 10;
+  ctx.fillRect(x + 4, y + 4, CELL_SIZE - 8, CELL_SIZE - 8);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(223, 247, 255, 0.92)";
+  ctx.lineWidth = 1.25;
+  ctx.strokeRect(x + 4.5, y + 4.5, CELL_SIZE - 9, CELL_SIZE - 9);
   ctx.font = '18px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+  ctx.shadowColor = "rgba(223, 247, 255, 0.45)";
+  ctx.shadowBlur = 6;
   ctx.fillText(meta.emoji, x + CELL_SIZE / 2, y + CELL_SIZE / 2 + 1);
+  ctx.restore();
 }
 
 function drawSnake() {
@@ -321,6 +345,56 @@ function drawSnake() {
       ctx.fillRect(x + 4, y + 4, CELL_SIZE - 8, CELL_SIZE - 8);
     }
   }
+}
+
+function scheduleBoardSync() {
+  window.cancelAnimationFrame(boardSyncFrame);
+  boardSyncFrame = window.requestAnimationFrame(syncBoardViewport);
+}
+
+function syncBoardViewport() {
+  boardSyncFrame = 0;
+
+  if (window.innerWidth > 720) {
+    document.documentElement.style.removeProperty("--board-size");
+    return;
+  }
+
+  const tgHeight = Number(window.Telegram?.WebApp?.viewportStableHeight || 0);
+  const viewportHeight = tgHeight > 0 ? tgHeight : window.innerHeight;
+  const shellStyles = window.getComputedStyle(document.querySelector(".shell"));
+  const boardStyles = window.getComputedStyle(document.querySelector(".boardCard"));
+  const actionsStyles = window.getComputedStyle(document.querySelector(".actions"));
+  const controlsStyles = window.getComputedStyle(document.querySelector(".controls"));
+
+  const reservedHeight =
+    getRectHeight(".topbar") +
+    getRectHeight(".hud") +
+    getRectHeight(".boardCard__top") +
+    getRectHeight(".actions") +
+    getRectHeight(".controls") +
+    getPx(shellStyles.paddingTop) +
+    getPx(shellStyles.paddingBottom) +
+    getPx(boardStyles.paddingTop) +
+    getPx(boardStyles.paddingBottom) +
+    getPx(actionsStyles.marginTop) +
+    getPx(controlsStyles.marginTop) +
+    18;
+
+  const availableWidth = Math.min(window.innerWidth - 10, 460);
+  const availableHeight = Math.max(180, viewportHeight - reservedHeight);
+  const boardSize = Math.max(180, Math.floor(Math.min(availableWidth, availableHeight)));
+
+  document.documentElement.style.setProperty("--board-size", `${boardSize}px`);
+}
+
+function getRectHeight(selector) {
+  return document.querySelector(selector)?.getBoundingClientRect().height || 0;
+}
+
+function getPx(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function formatSalary(amount) {
