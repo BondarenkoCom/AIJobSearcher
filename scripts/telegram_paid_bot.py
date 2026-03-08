@@ -5,11 +5,13 @@ import hashlib
 import io
 import os
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Set
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pypdf import PdfReader
 
@@ -75,8 +77,20 @@ _RESUME_SESSIONS: Dict[int, ResumeSession] = {}
 _APPLY_ASSISTANT: ApplyAssistant | None = None
 _AI_SCORE_TTL_SEC = 2 * 60 * 60
 _AI_SCORE_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _git_head_ref(*, short: bool) -> str:
+    cmd = ["git", "rev-parse", "--short", "HEAD"] if short else ["git", "rev-parse", "HEAD"]
+    try:
+        return subprocess.check_output(cmd, cwd=str(ROOT), text=True, timeout=5).strip()
+    except Exception:
+        return "master" if not short else str(int(time.time()))
+
+
+_SNAKE_WEBAPP_GIT_REF = _git_head_ref(short=False)
+_SNAKE_WEBAPP_VERSION = str(os.getenv("TELEGRAM_WEBAPP_VERSION") or "").strip() or _git_head_ref(short=True)
 _DEFAULT_SNAKE_WEBAPP_URL = (
-    "https://raw.githack.com/BondarenkoCom/AIJobSearcher/master/ui/webapp/snake/index.html"
+    f"https://raw.githack.com/BondarenkoCom/AIJobSearcher/{_SNAKE_WEBAPP_GIT_REF}/ui/webapp/snake/index.html"
 )
 
 
@@ -94,19 +108,30 @@ def _safe(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _with_webapp_version(url: str) -> str:
+    raw_url = _safe(url)
+    if not raw_url:
+        return ""
+
+    parts = urlsplit(raw_url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["v"] = _SNAKE_WEBAPP_VERSION
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
 def _resolve_webapp_url_from_env() -> str:
     direct = _safe(os.getenv("TELEGRAM_WEBAPP_URL"))
     if direct:
-        return direct
+        return _with_webapp_version(direct)
 
     public_base = _safe(os.getenv("REMOTE_WORK_HUNTER_PUBLIC_BASE_URL"))
     if public_base:
         lower = public_base.lower()
         if lower.endswith(".html") or "/snake" in lower:
-            return public_base
-        return public_base.rstrip("/") + "/snake/"
+            return _with_webapp_version(public_base)
+        return _with_webapp_version(public_base.rstrip("/") + "/snake/")
 
-    return _DEFAULT_SNAKE_WEBAPP_URL
+    return _with_webapp_version(_DEFAULT_SNAKE_WEBAPP_URL)
 
 
 def _display_name(*, username: str = "", first_name: str = "") -> str:
