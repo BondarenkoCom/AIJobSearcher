@@ -105,7 +105,7 @@ function createBaseState() {
     status: "ready",
     reason: "",
     turn: 0,
-    message: "Tap Start, swipe, or use the turn buttons.",
+    message: "Tap Start. Use the turn buttons on mobile or arrow keys on desktop.",
   };
 }
 

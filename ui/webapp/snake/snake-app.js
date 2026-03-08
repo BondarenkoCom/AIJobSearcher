@@ -9,11 +9,10 @@ import {
   restartState,
   stepGame,
   togglePause,
-} from "./snake-core.js?v=20260308e";
+} from "./snake-core.js?v=20260308g";
 
 const canvas = document.getElementById("gameBoard");
 const ctx = canvas.getContext("2d");
-const canvasWrap = document.getElementById("canvasWrap");
 const salaryValue = document.getElementById("salaryValue");
 const xpValue = document.getElementById("xpValue");
 const burnoutValue = document.getElementById("burnoutValue");
@@ -35,7 +34,6 @@ const randomFn = () => Math.random();
 let state = createInitialState(randomFn);
 let bestSalary = loadBestSalary();
 let timerId = 0;
-let touchStart = null;
 let boardSyncFrame = 0;
 
 window.__jobSnakeDebug = {
@@ -86,39 +84,6 @@ function attachEvents() {
   for (const button of turnButtons) {
     button.addEventListener("click", () => queueTurnInput(button.dataset.turn));
   }
-
-  canvasWrap.addEventListener(
-    "touchstart",
-    (event) => {
-      const touch = event.changedTouches[0];
-      touchStart = { x: touch.clientX, y: touch.clientY };
-    },
-    { passive: true }
-  );
-
-  canvasWrap.addEventListener(
-    "touchend",
-    (event) => {
-      if (!touchStart) {
-        return;
-      }
-      const touch = event.changedTouches[0];
-      const dx = touch.clientX - touchStart.x;
-      const dy = touch.clientY - touchStart.y;
-      touchStart = null;
-
-      if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) {
-        return;
-      }
-
-      if (Math.abs(dx) > Math.abs(dy)) {
-        queueInput(dx > 0 ? "right" : "left");
-      } else {
-        queueInput(dy > 0 ? "down" : "up");
-      }
-    },
-    { passive: true }
-  );
 }
 
 function handleKeyDown(event) {
