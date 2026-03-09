@@ -3,7 +3,7 @@ AIJobSearcher
 
 ![AIJobSearcher cover](assets/aya_operator_cover.png)
 
-Remote work lead engine with a paid Telegram delivery layer.
+Public-safe automation toolkit for collecting, normalizing, and delivering remote-job leads through Telegram.
 
 Overview
 --------
@@ -17,6 +17,14 @@ This repository is a practical system for:
 - gating premium AI features behind Telegram Stars payments
 
 The current public product layer is branded as `Remote Work Hunter`.
+
+Core public stack:
+
+- `Python`
+- `SQLite`
+- `Playwright`
+- `Telegram Bot API`
+- optional AI-assisted scoring and apply-analysis flows
 
 What The Public Snapshot Can Do
 -------------------------------
